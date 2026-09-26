@@ -5,8 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery } from "convex/react";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import { CalendarClock, Megaphone, PhoneCall } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
@@ -15,44 +15,38 @@ import { toast } from "sonner";
 
 export default function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>();
-  const campaign = useQuery(
-    api.campaigns.get,
-    campaignId ? { id: campaignId as never } : "skip",
+  const id = campaignId ? Number(campaignId) : null;
+
+  const campaignResource = useApiResource(
+    () => (id ? api.getCampaign(id).catch(() => null) : Promise.resolve(null)),
+    [id],
   );
-  const customers = useQuery(api.customers.list) as
-    | Array<{ _id: string; name: string; phone_number: string }>
-    | undefined;
-  const calls = useQuery(api.calls.list) as
-    | Array<{
-        _id: string;
-        customer_id: string;
-        status: string;
-        started_at: number;
-        duration_seconds?: number;
-        lead_status: string;
-        customer?: { name: string } | null;
-      }>
-    | undefined;
+  const customersResource = useApiResource(() => api.listCustomers(), []);
+  const callsResource = useApiResource(() => api.listCalls(), []);
 
-  const createCall = useMutation(api.calls.create);
-  const logEvent = useMutation(api.calls.logEvent);
-  const scheduleCall = useMutation(api.scheduling.create);
+  const campaign = campaignResource.data;
+  const customers = customersResource.data;
+  const calls = callsResource.data;
+
+  const createCall = async (customer_id: number) => api.createCall(customer_id);
+  const scheduleCall = async (body: Parameters<typeof api.scheduleCall>[0]) =>
+    api.scheduleCall(body);
+
   const navigate = useNavigate();
-
   const [customerId, setCustomerId] = useState("");
   const [when, setWhen] = useState<"now" | "later">("now");
   const [scheduledFor, setScheduledFor] = useState("");
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
 
-  if (campaign === undefined) {
+  if (campaignResource.loading) {
     return (
       <AppShell active="/dashboard/catalog" title="Campaign">
         <div className="studio-frame h-64 animate-pulse rounded-lg" />
       </AppShell>
     );
   }
-  if (campaign === null) {
+  if (!campaign) {
     return (
       <AppShell active="/dashboard/catalog" title="Campaign not found">
         <Button asChild variant="outline" size="sm">
@@ -72,25 +66,17 @@ export default function CampaignDetail() {
     setBusy(true);
     try {
       if (when === "now") {
-        const callId = await createCall({
-          customer_id: customerId as never,
-          mode: "browser",
-        });
-        await logEvent({
-          call_id: callId,
-          event: "call_initiated",
-          detail: `Campaign: ${campaign.name}`,
-        });
-        navigate(`/dashboard/calls/${callId}/live`);
+        const call = await createCall(Number(customerId));
+        navigate(`/dashboard/calls/${call.id}/live`);
       } else {
         if (!scheduledFor) {
           toast.error("Pick a date and time.");
           return;
         }
         await scheduleCall({
-          customer_id: customerId as never,
-          campaign_id: campaign._id as never,
-          scheduled_for: new Date(scheduledFor).getTime(),
+          customer_id: Number(customerId),
+          campaign_id: campaign.id,
+          scheduled_for: new Date(scheduledFor).toISOString(),
           notes: notes || undefined,
         });
         toast.success("Call scheduled.");
@@ -141,7 +127,7 @@ export default function CampaignDetail() {
           <Card className="studio-frame shadow-none">
             <CardContent className="p-5">
               <p className="studio-label">Recent calls</p>
-              {!calls && (
+              {callsResource.loading && (
                 <div className="mt-4 space-y-2">
                   {Array.from({ length: 3 }).map((_, i) => (
                     <div key={i} className="h-8 animate-pulse rounded bg-muted" />
@@ -156,8 +142,8 @@ export default function CampaignDetail() {
               <div className="mt-3 divide-y divide-border/60">
                 {relatedCalls.map((call) => (
                   <Link
-                    key={call._id}
-                    to={`/dashboard/calls/${call._id}`}
+                    key={call.id}
+                    to={`/dashboard/calls/${call.id}`}
                     className="flex items-center justify-between py-2.5 text-sm hover:bg-accent/30"
                   >
                     <span className="font-medium">{call.customer?.name ?? "Unknown"}</span>
@@ -194,7 +180,7 @@ export default function CampaignDetail() {
                   >
                     <option value="">Select a customer…</option>
                     {customers.map((c) => (
-                      <option key={c._id} value={c._id}>
+                      <option key={c.id} value={c.id}>
                         {c.name} · {c.phone_number}
                       </option>
                     ))}
@@ -248,11 +234,7 @@ export default function CampaignDetail() {
               )}
 
               <Button onClick={launch} disabled={busy || !customerId}>
-                {busy
-                  ? "Working…"
-                  : when === "now"
-                    ? "Open voice session"
-                    : "Book the call"}
+                {busy ? "Working…" : when === "now" ? "Open voice session" : "Book the call"}
               </Button>
               <p className="text-xs leading-relaxed text-muted-foreground">
                 Calls run in Browser Voice Demo mode — simulated conversations, not real phone

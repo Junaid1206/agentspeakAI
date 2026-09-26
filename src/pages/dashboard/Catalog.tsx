@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery } from "convex/react";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import { LayoutGrid, Plus, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -40,20 +40,13 @@ const EMPTY: CampaignForm = {
 
 export default function Catalog() {
   const [search, setSearch] = useState("");
-  const campaigns = useQuery(api.campaigns.list, { search }) as
-    | Array<{
-        _id: string;
-        name: string;
-        product: string;
-        description?: string;
-        price_label: string;
-        category: string;
-        highlights: string[];
-        active: boolean;
-      }>
-    | undefined;
-  const createCampaign = useMutation(api.campaigns.create);
-  const ensureDefaults = useMutation(api.campaigns.ensureDefaults);
+  const campaignsResource = useApiResource(() => api.listCampaigns(search), [search]);
+  const campaigns = campaignsResource.data;
+
+  const createCampaign = async (body: Parameters<typeof api.createCampaign>[0]) =>
+    api.createCampaign(body);
+  const seedCampaigns = async () => api.seedCampaigns();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState<CampaignForm>(EMPTY);
   const [saving, setSaving] = useState(false);
@@ -62,9 +55,12 @@ export default function Catalog() {
   // First visit with an empty catalog materializes the default campaign rows.
   useEffect(() => {
     if (campaigns && campaigns.length === 0 && !search) {
-      void ensureDefaults();
+      seedCampaigns()
+        .then(() => campaignsResource.refresh())
+        .catch(() => undefined);
     }
-  }, [campaigns, search, ensureDefaults]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns, search]);
 
   const submit = async () => {
     setSaving(true);
@@ -76,7 +72,7 @@ export default function Catalog() {
         .slice(0, 6);
       const priceMatch = form.price_label.match(/[\d,]+/);
       const price = priceMatch ? Number(priceMatch[0].replace(/,/g, "")) : 0;
-      const id = await createCampaign({
+      const campaign = await createCampaign({
         name: form.name,
         product: form.product || form.name,
         description: form.description || undefined,
@@ -88,7 +84,7 @@ export default function Catalog() {
       toast.success("Campaign added to the catalog.");
       setDialogOpen(false);
       setForm(EMPTY);
-      navigate(`/dashboard/catalog/${id}`);
+      navigate(`/dashboard/catalog/${campaign.id}`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not create campaign.");
     } finally {
@@ -118,7 +114,7 @@ export default function Catalog() {
         />
       </div>
 
-      {!campaigns && (
+      {campaignsResource.loading && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 3 }).map((_, i) => (
             <div key={i} className="studio-frame h-52 animate-pulse rounded-lg" />
@@ -140,7 +136,7 @@ export default function Catalog() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {campaigns?.map((c) => (
-          <Card key={c._id} className="studio-frame shadow-none">
+          <Card key={c.id} className="studio-frame shadow-none">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <Badge variant="outline" className="text-muted-foreground">
@@ -152,7 +148,7 @@ export default function Catalog() {
                   </Badge>
                 )}
               </div>
-              <Link to={`/dashboard/catalog/${c._id}`} className="mt-3 block">
+              <Link to={`/dashboard/catalog/${c.id}`} className="mt-3 block">
                 <p className="text-sm font-semibold hover:underline">{c.name}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">{c.product}</p>
               </Link>
@@ -164,7 +160,7 @@ export default function Catalog() {
               <div className="studio-hairline mt-4 flex items-center justify-between pt-3">
                 <span className="text-sm font-medium">{c.price_label}</span>
                 <Button asChild size="sm" variant="outline">
-                  <Link to={`/dashboard/catalog/${c._id}`}>View</Link>
+                  <Link to={`/dashboard/catalog/${c.id}`}>View</Link>
                 </Button>
               </div>
             </CardContent>

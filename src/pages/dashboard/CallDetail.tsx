@@ -1,8 +1,10 @@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import {
   LEAD_LABELS,
   OUTCOME_LABELS,
@@ -13,7 +15,6 @@ import {
   statusClass,
   titleCase,
 } from "@/lib/call-display";
-import { useQuery } from "convex/react";
 import {
   Activity,
   Bot,
@@ -22,33 +23,51 @@ import {
   Mic,
   PhoneCall,
   ScrollText,
+  Send,
   Sparkles,
   User,
 } from "lucide-react";
-import { useMutation } from "convex/react";
 import { useState } from "react";
-import { Textarea } from "@/components/ui/textarea";
-import { api as apiRef } from "@/convex/_generated/api";
-import { toast } from "sonner";
-import { Send } from "lucide-react";
 import { Link, useParams } from "react-router";
+import { toast } from "sonner";
 
 export default function CallDetail() {
   const { callId } = useParams<{ callId: string }>();
-  const call = useQuery(api.calls.get, callId ? { id: callId as never } : "skip");
-  const transcript = useQuery(api.calls.transcript, callId ? { call_id: callId as never } : "skip");
-  const summary = useQuery(api.calls.summary, callId ? { call_id: callId as never } : "skip");
-  const agentState = useQuery(api.calls.agentState, callId ? { call_id: callId as never } : "skip");
-  const events = useQuery(api.calls.events, callId ? { call_id: callId as never } : "skip");
-  const comments = useQuery(
-    apiRef.comments.listForCall,
-    callId ? { call_id: callId as never } : "skip",
-  ) as
-    | Array<{ _id: string; author: string; body: string; created_at: number }>
-    | undefined;
-  const addComment = useMutation(apiRef.comments.add);
+  const id = callId ? Number(callId) : null;
 
-  if (call === undefined) {
+  const callResource = useApiResource(() => (id ? api.getCall(id) : Promise.resolve(null)), [id]);
+  const transcriptResource = useApiResource(
+    () => (id ? api.transcript(id) : Promise.resolve([])),
+    [id],
+  );
+  const summaryResource = useApiResource(
+    () => (id ? api.summary(id).catch(() => null) : Promise.resolve(null)),
+    [id],
+  );
+  const stateResource = useApiResource(
+    () => (id ? api.agentState(id).catch(() => null) : Promise.resolve(null)),
+    [id],
+  );
+  const eventsResource = useApiResource(
+    () => (id ? api.events(id) : Promise.resolve([])),
+    [id],
+  );
+  const commentsResource = useApiResource(
+    () => (id ? api.callComments(id) : Promise.resolve([])),
+    [id],
+  );
+
+  const call = callResource.data;
+  const transcript = transcriptResource.data;
+  const summary = summaryResource.data;
+  const agentState = stateResource.data;
+  const events = eventsResource.data;
+  const comments = commentsResource.data;
+
+  const [commentDraft, setCommentDraft] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  if (callResource.loading) {
     return (
       <AppShell active="/dashboard/calls" title="Call details">
         <div className="studio-frame h-64 animate-pulse rounded-lg" />
@@ -56,12 +75,12 @@ export default function CallDetail() {
     );
   }
 
-  if (call === null) {
+  if (!call) {
     return (
       <AppShell active="/dashboard/calls" title="Call not found">
         <Card className="studio-frame shadow-none">
           <CardContent className="p-10 text-center text-sm text-muted-foreground">
-            This call does not exist.
+            {callResource.error ?? "This call does not exist."}
             <div className="mt-4">
               <Button asChild variant="outline" size="sm">
                 <Link to="/dashboard/calls">Back to call history</Link>
@@ -74,24 +93,18 @@ export default function CallDetail() {
   }
 
   const isActive = ["queued", "calling", "connected", "in_conversation"].includes(call.status);
-  const collected = (agentState?.collected ?? {}) as Record<string, string | null>;
-  const filledEntries = Object.entries(collected).filter(
+  const filledEntries = Object.entries(agentState?.collected ?? {}).filter(
     ([, v]) => typeof v === "string" && v.trim(),
   );
-  const [commentDraft, setCommentDraft] = useState("");
-  const [posting, setPosting] = useState(false);
 
   const postComment = async () => {
-    if (!commentDraft.trim() || !callId) return;
+    if (!commentDraft.trim() || !call || id === null) return;
     setPosting(true);
     try {
-      await addComment({
-        customer_id: call.customer_id as never,
-        call_id: callId as never,
-        body: commentDraft,
-      });
+      await api.addComment(call.customer_id, id, commentDraft);
       toast.success("Note added.");
       setCommentDraft("");
+      commentsResource.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not add the note.");
     } finally {
@@ -107,7 +120,7 @@ export default function CallDetail() {
       actions={
         isActive ? (
           <Button asChild size="sm">
-            <Link to={`/dashboard/calls/${callId}/live`}>
+            <Link to={`/dashboard/calls/${id}/live`}>
               <Mic className="size-4" />
               Open live console
             </Link>
@@ -116,7 +129,6 @@ export default function CallDetail() {
       }
     >
       <div className="grid gap-4 lg:grid-cols-3">
-        {/* Left: transcript + summary */}
         <div className="space-y-4 lg:col-span-2">
           <Card className="studio-frame shadow-none">
             <CardContent className="p-5">
@@ -128,7 +140,7 @@ export default function CallDetail() {
                 </span>
               </div>
               <div className="mt-4 space-y-3">
-                {!transcript && (
+                {transcriptResource.loading && (
                   <div className="space-y-2">
                     {Array.from({ length: 3 }).map((_, i) => (
                       <div key={i} className="h-10 animate-pulse rounded bg-muted" />
@@ -142,7 +154,7 @@ export default function CallDetail() {
                 )}
                 {transcript?.map((m) => (
                   <div
-                    key={m._id}
+                    key={m.id}
                     className={
                       m.speaker === "customer"
                         ? "rounded-lg border border-border/60 bg-secondary/40 p-3"
@@ -160,7 +172,11 @@ export default function CallDetail() {
                         <Activity className="size-3.5" />
                       )}
                       <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                        {m.speaker === "ai" ? "Sam (AI)" : m.speaker === "customer" ? call.customer?.name ?? "Customer" : "System"}
+                        {m.speaker === "ai"
+                          ? "Sam (AI)"
+                          : m.speaker === "customer"
+                            ? call.customer?.name ?? "Customer"
+                            : "System"}
                       </span>
                       <span className="ml-auto text-[10px] text-muted-foreground">
                         {formatDate(m.timestamp)}
@@ -212,7 +228,7 @@ export default function CallDetail() {
                       </div>
                     ))}
                   </dl>
-                  {summary.key_requirements?.length > 0 && (
+                  {summary.key_requirements && summary.key_requirements.length > 0 && (
                     <div className="mt-4">
                       <p className="studio-label">Key requirements</p>
                       <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-muted-foreground">
@@ -228,7 +244,6 @@ export default function CallDetail() {
           </Card>
         </div>
 
-        {/* Right: call info + agent state + events */}
         <div className="space-y-4">
           <Card className="studio-frame shadow-none">
             <CardContent className="p-5">
@@ -271,20 +286,21 @@ export default function CallDetail() {
               <div className="studio-hairline mt-5 pt-4">
                 <p className="studio-label">Team notes</p>
                 <div className="mt-3 space-y-2">
-                  {comments?.length === 0 && (
+                  {comments && comments.length === 0 && (
                     <p className="text-xs text-muted-foreground">No notes on this call yet.</p>
                   )}
                   {comments?.map((c) => (
-                    <div key={c._id} className="rounded-md border border-border/60 bg-secondary/40 p-2.5">
+                    <div
+                      key={c.id}
+                      className="rounded-md border border-border/60 bg-secondary/40 p-2.5"
+                    >
                       <p className="text-[11px] font-medium text-muted-foreground">
                         {c.author} · {formatDate(c.created_at)}
                       </p>
                       <p className="mt-1 text-sm leading-relaxed">{c.body}</p>
                     </div>
                   ))}
-                  {!comments && (
-                    <div className="h-8 animate-pulse rounded bg-muted" />
-                  )}
+                  {!comments && <div className="h-8 animate-pulse rounded bg-muted" />}
                 </div>
                 <div className="mt-3 flex gap-2">
                   <Textarea
@@ -350,14 +366,15 @@ export default function CallDetail() {
                   <p className="text-sm text-muted-foreground">No events recorded.</p>
                 )}
                 {events?.slice(0, 12).map((e) => (
-                  <div key={e._id} className="flex items-baseline justify-between gap-2 text-xs">
+                  <div key={e.id} className="flex items-baseline justify-between gap-2 text-xs">
                     <span className="font-medium">{e.event}</span>
                     <span className="text-muted-foreground">{formatDate(e.created_at)}</span>
                   </div>
                 ))}
-                {!events && Array.from({ length: 3 }).map((_, i) => (
-                  <div key={i} className="h-4 animate-pulse rounded bg-muted" />
-                ))}
+                {!events &&
+                  Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="h-4 animate-pulse rounded bg-muted" />
+                  ))}
               </div>
             </CardContent>
           </Card>

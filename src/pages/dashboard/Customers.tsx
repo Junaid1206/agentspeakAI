@@ -13,12 +13,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery } from "convex/react";
-import { Pencil, PhoneCall, Plus, Trash2, UserPlus } from "lucide-react";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api, type Customer } from "@/lib/api";
+import { Pencil, PhoneCall, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
-import { Id } from "@/convex/_generated/dataModel";
 import { toast } from "sonner";
 
 interface CustomerForm {
@@ -38,33 +37,22 @@ const EMPTY_FORM: CustomerForm = {
 };
 
 export default function Customers() {
-  const customers = useQuery(api.customers.list) as
-    | Array<{
-        _id: string;
-        name: string;
-        phone_number: string;
-        company_name?: string;
-        purpose?: string;
-        product?: string;
-      }>
-    | undefined;
-  const allCalls = useQuery(api.calls.list);
+  const [search, setSearch] = useState("");
+  const customersResource = useApiResource(() => api.listCustomers(search), [search]);
+  const callsResource = useApiResource(() => api.listCalls(), []);
 
-  const createCustomer = useMutation(api.customers.create);
-  const updateCustomer = useMutation(api.customers.update);
-  const removeCustomer = useMutation(api.customers.remove);
-  const createCall = useMutation(api.calls.create);
-  const logEvent = useMutation(api.calls.logEvent);
+  const customers = customersResource.data;
+  const allCalls = callsResource.data;
 
   const navigate = useNavigate();
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<Id<"customers"> | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<CustomerForm>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [startingCall, setStartingCall] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
+  const [startingCall, setStartingCall] = useState<number | null>(null);
 
-  const callCountFor = (customerId: string) =>
+  const callCountFor = (customerId: number) =>
     allCalls?.filter((c) => c.customer_id === customerId).length ?? 0;
 
   const openCreate = () => {
@@ -73,8 +61,8 @@ export default function Customers() {
     setDialogOpen(true);
   };
 
-  const openEdit = (c: { _id: string; name: string; phone_number: string; company_name?: string; purpose?: string; product?: string }) => {
-    setEditingId(c._id as Id<"customers">);
+  const openEdit = (c: Customer) => {
+    setEditingId(c.id);
     setForm({
       name: c.name,
       phone_number: c.phone_number,
@@ -89,13 +77,14 @@ export default function Customers() {
     setSaving(true);
     try {
       if (editingId) {
-        await updateCustomer({ id: editingId, ...form });
+        await api.updateCustomer(editingId, form);
         toast.success("Customer updated.");
       } else {
-        await createCustomer(form);
+        await api.createCustomer(form);
         toast.success("Customer added.");
       }
       setDialogOpen(false);
+      customersResource.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Save failed.");
     } finally {
@@ -106,8 +95,10 @@ export default function Customers() {
   const confirmDelete = async () => {
     if (!deleteTarget) return;
     try {
-      await removeCustomer({ id: deleteTarget.id as never });
+      await api.deleteCustomer(deleteTarget.id);
       toast.success(`${deleteTarget.name} and all related calls were deleted.`);
+      customersResource.refresh();
+      callsResource.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Delete failed.");
     } finally {
@@ -115,12 +106,11 @@ export default function Customers() {
     }
   };
 
-  const startCall = async (customerId: string) => {
+  const startCall = async (customerId: number) => {
     setStartingCall(customerId);
     try {
-      const callId = await createCall({ customer_id: customerId as never, mode: "browser" });
-      await logEvent({ call_id: callId, event: "call_initiated", detail: "Browser Voice Demo" });
-      navigate(`/dashboard/calls/${callId}/live`);
+      const call = await api.createCall(customerId);
+      navigate(`/dashboard/calls/${call.id}/live`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not start the call.");
     } finally {
@@ -132,7 +122,7 @@ export default function Customers() {
     <AppShell
       active="/dashboard/customers"
       title="Customers"
-      description="People the calling agent can reach in browser demo sessions."
+      description="Contacts the AI agent reaches in browser demo sessions. Stored in PostgreSQL via FastAPI."
       actions={
         <Button size="sm" onClick={openCreate}>
           <Plus className="size-4" />
@@ -140,7 +130,17 @@ export default function Customers() {
         </Button>
       }
     >
-      {!customers && (
+      <div className="relative mb-4 max-w-sm">
+        <Search className="absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search name, phone or company…"
+          className="bg-card pl-9"
+        />
+      </div>
+
+      {customersResource.loading && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
             <div key={i} className="studio-frame h-36 animate-pulse rounded-lg" />
@@ -148,7 +148,7 @@ export default function Customers() {
         </div>
       )}
 
-      {customers && customers.length === 0 && (
+      {customers && customers.length === 0 && !search && (
         <Card className="studio-frame shadow-none">
           <CardContent className="flex flex-col items-center gap-3 p-12 text-center">
             <div className="flex size-11 items-center justify-center rounded-full border border-border/80 bg-secondary">
@@ -167,10 +167,18 @@ export default function Customers() {
         </Card>
       )}
 
+      {customers && customers.length === 0 && search && (
+        <Card className="studio-frame shadow-none">
+          <CardContent className="p-12 text-center text-sm text-muted-foreground">
+            No customers match “{search}”.
+          </CardContent>
+        </Card>
+      )}
+
       {customers && customers.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {customers.map((c) => (
-            <Card key={c._id} className="studio-frame shadow-none">
+            <Card key={c.id} className="studio-frame shadow-none">
               <CardContent className="p-5">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
@@ -185,7 +193,7 @@ export default function Customers() {
                       variant="ghost"
                       size="icon"
                       className="size-8 text-muted-foreground hover:text-destructive"
-                      onClick={() => setDeleteTarget({ id: c._id, name: c.name })}
+                      onClick={() => setDeleteTarget(c)}
                     >
                       <Trash2 className="size-3.5" />
                     </Button>
@@ -198,20 +206,20 @@ export default function Customers() {
                 </div>
                 <div className="studio-hairline mt-4 flex items-center justify-between pt-3">
                   <Badge variant="outline" className="text-muted-foreground">
-                    {callCountFor(c._id)} call{callCountFor(c._id) === 1 ? "" : "s"}
+                    {callCountFor(c.id)} call{callCountFor(c.id) === 1 ? "" : "s"}
                   </Badge>
                   <Button
                     size="sm"
                     variant="outline"
                     disabled={startingCall !== null}
-                    onClick={() => startCall(c._id)}
+                    onClick={() => startCall(c.id)}
                   >
                     <PhoneCall className="size-3.5" />
-                    {startingCall === c._id ? "Starting…" : "Start Call"}
+                    {startingCall === c.id ? "Starting…" : "Start Call"}
                   </Button>
                 </div>
                 <Link
-                  to={`/dashboard/calls?customer=${c._id}`}
+                  to={`/dashboard/calls?customer=${c.id}`}
                   className="mt-3 block text-xs text-muted-foreground hover:text-foreground"
                 >
                   View call history →
@@ -228,7 +236,8 @@ export default function Customers() {
           <DialogHeader>
             <DialogTitle>{editingId ? "Edit customer" : "Add customer"}</DialogTitle>
             <DialogDescription>
-              The agent uses the product and purpose to frame the conversation.
+              Phone numbers are validated server-side (8–15 digits). The agent uses the product and
+              purpose to frame the conversation.
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2">
@@ -283,7 +292,10 @@ export default function Customers() {
             <Button variant="ghost" onClick={() => setDialogOpen(false)} disabled={saving}>
               Cancel
             </Button>
-            <Button onClick={submit} disabled={saving || !form.name.trim() || !form.phone_number.trim()}>
+            <Button
+              onClick={submit}
+              disabled={saving || !form.name.trim() || !form.phone_number.trim()}
+            >
               {saving ? "Saving…" : editingId ? "Save changes" : "Add customer"}
             </Button>
           </DialogFooter>
@@ -297,7 +309,7 @@ export default function Customers() {
             <DialogTitle>Delete {deleteTarget?.name}?</DialogTitle>
             <DialogDescription>
               This permanently removes the customer and every related call, transcript, summary and
-              agent state. This cannot be undone.
+              agent state (database cascade). This cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

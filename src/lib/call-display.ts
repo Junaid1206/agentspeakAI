@@ -64,9 +64,11 @@ export function formatDuration(seconds?: number | null): string {
   return `${m}m ${s.toString().padStart(2, "0")}s`;
 }
 
-export function formatDate(ms?: number | null): string {
-  if (!ms) return "—";
-  return new Date(ms).toLocaleString(undefined, {
+export function formatDate(value?: number | string | null): string {
+  if (value === undefined || value === null || value === "") return "—";
+  const date = typeof value === "number" ? new Date(value) : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString(undefined, {
     month: "short",
     day: "numeric",
     hour: "2-digit",

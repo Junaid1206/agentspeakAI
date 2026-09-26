@@ -13,8 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery } from "convex/react";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import { BookOpen, PenLine, Search } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
@@ -23,18 +23,8 @@ import { toast } from "sonner";
 
 export default function Knowledge() {
   const [search, setSearch] = useState("");
-  const posts = useQuery(api.knowledge.list, { search }) as
-    | Array<{
-        _id: string;
-        title: string;
-        summary?: string;
-        author: string;
-        published: boolean;
-        created_at: number;
-      }>
-    | undefined;
-  const createPost = useMutation(api.knowledge.create);
-  const setPublished = useMutation(api.knowledge.setPublished);
+  const postsResource = useApiResource(() => api.listPosts(search), [search]);
+  const posts = postsResource.data;
 
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
@@ -45,16 +35,27 @@ export default function Knowledge() {
   const submit = async () => {
     setSaving(true);
     try {
-      await createPost({ title, body, summary: summary || undefined, publish: true });
+      await api.createPost({ title, body, summary: summary || undefined, publish: true });
       toast.success("Playbook published.");
       setOpen(false);
       setTitle("");
       setSummary("");
       setBody("");
+      postsResource.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not publish.");
     } finally {
       setSaving(false);
+    }
+  };
+
+  const togglePublish = async (id: number, published: boolean) => {
+    try {
+      await api.setPublished(id, published);
+      toast.success(published ? "Published." : "Moved to drafts.");
+      postsResource.refresh();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Update failed.");
     }
   };
 
@@ -80,7 +81,7 @@ export default function Knowledge() {
         />
       </div>
 
-      {!posts && (
+      {postsResource.loading && (
         <div className="grid gap-3 sm:grid-cols-2">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="studio-frame h-28 animate-pulse rounded-lg" />
@@ -106,19 +107,22 @@ export default function Knowledge() {
 
       <div className="grid gap-3 sm:grid-cols-2">
         {posts?.map((p) => (
-          <Card key={p._id} className="studio-frame shadow-none">
+          <Card key={p.id} className="studio-frame shadow-none">
             <CardContent className="p-5">
               <div className="flex items-center justify-between">
                 <Badge variant="outline" className="text-muted-foreground">
                   Playbook
                 </Badge>
                 {p.published ? null : (
-                  <Badge variant="outline" className="border-amber-300/60 bg-amber-50 text-amber-800">
+                  <Badge
+                    variant="outline"
+                    className="border-amber-300/60 bg-amber-50 text-amber-800"
+                  >
                     Draft
                   </Badge>
                 )}
               </div>
-              <Link to={`/dashboard/knowledge/${p._id}`} className="mt-3 block">
+              <Link to={`/dashboard/knowledge/${p.id}`} className="mt-3 block">
                 <p className="text-sm font-semibold hover:underline">{p.title}</p>
                 <p className="mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                   {p.summary ?? ""}
@@ -133,10 +137,7 @@ export default function Knowledge() {
                     variant="ghost"
                     size="sm"
                     className="h-6 px-2 text-xs"
-                    onClick={async () => {
-                      await setPublished({ id: p._id as never, published: false });
-                      toast.success("Moved to drafts.");
-                    }}
+                    onClick={() => togglePublish(p.id, false)}
                   >
                     Unpublish
                   </Button>
@@ -145,10 +146,7 @@ export default function Knowledge() {
                     variant="ghost"
                     size="sm"
                     className="h-6 px-2 text-xs"
-                    onClick={async () => {
-                      await setPublished({ id: p._id as never, published: true });
-                      toast.success("Published.");
-                    }}
+                    onClick={() => togglePublish(p.id, true)}
                   >
                     Publish
                   </Button>

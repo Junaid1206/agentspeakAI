@@ -13,34 +13,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
-import { useMutation, useQuery } from "convex/react";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import { CalendarClock, CalendarPlus } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 import { formatDate } from "@/lib/call-display";
 import { toast } from "sonner";
 
 export default function Schedule() {
-  const slots = useQuery(api.scheduling.list) as
-    | Array<{
-        _id: string;
-        scheduled_for: number;
-        notes?: string;
-        status: string;
-        campaign_name?: string;
-        customer?: { name: string; phone_number: string } | null;
-      }>
-    | undefined;
-  const customers = useQuery(api.customers.list) as
-    | Array<{ _id: string; name: string; phone_number: string }>
-    | undefined;
-  const campaigns = useQuery(api.campaigns.list, {}) as
-    | Array<{ _id: string; name: string }>
-    | undefined;
+  const slotsResource = useApiResource(() => api.listSchedule(), []);
+  const customersResource = useApiResource(() => api.listCustomers(), []);
+  const campaignsResource = useApiResource(() => api.listCampaigns(), []);
 
-  const createSlot = useMutation(api.scheduling.create);
-  const cancelSlot = useMutation(api.scheduling.cancel);
+  const slots = slotsResource.data;
+  const customers = customersResource.data;
+  const campaigns = campaignsResource.data;
 
   const [open, setOpen] = useState(false);
   const [customerId, setCustomerId] = useState("");
@@ -51,15 +38,15 @@ export default function Schedule() {
 
   const submit = async () => {
     if (!customerId || !when) {
-      toast.error("Choose a customer, a time and date.");
+      toast.error("Choose a customer and a time.");
       return;
     }
     setSaving(true);
     try {
-      await createSlot({
-        customer_id: customerId as never,
-        campaign_id: campaignId ? (campaignId as never) : undefined,
-        scheduled_for: new Date(when).getTime(),
+      await api.scheduleCall({
+        customer_id: Number(customerId),
+        campaign_id: campaignId ? Number(campaignId) : undefined,
+        scheduled_for: new Date(when).toISOString(),
         notes: notes || undefined,
       });
       toast.success("Call booked.");
@@ -68,6 +55,7 @@ export default function Schedule() {
       setCampaignId("");
       setWhen("");
       setNotes("");
+      slotsResource.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not book the call.");
     } finally {
@@ -75,10 +63,11 @@ export default function Schedule() {
     }
   };
 
-  const cancel = async (id: string) => {
+  const cancel = async (id: number) => {
     try {
-      await cancelSlot({ id: id as never });
+      await api.cancelSchedule(id);
       toast.success("Scheduled call cancelled.");
+      slotsResource.refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not cancel.");
     }
@@ -86,10 +75,10 @@ export default function Schedule() {
 
   const now = Date.now();
   const upcoming = (slots ?? []).filter(
-    (s) => s.status === "scheduled" && s.scheduled_for >= now,
+    (s) => s.status === "scheduled" && new Date(s.scheduled_for).getTime() >= now,
   );
   const past = (slots ?? []).filter(
-    (s) => s.status !== "scheduled" || s.scheduled_for < now,
+    (s) => s.status !== "scheduled" || new Date(s.scheduled_for).getTime() < now,
   );
 
   return (
@@ -107,7 +96,7 @@ export default function Schedule() {
       <Card className="studio-frame shadow-none">
         <CardContent className="p-5">
           <p className="studio-label">Upcoming</p>
-          {!slots && (
+          {slotsResource.loading && (
             <div className="mt-4 space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (
                 <div key={i} className="h-9 animate-pulse rounded bg-muted" />
@@ -121,13 +110,15 @@ export default function Schedule() {
           )}
           <div className="mt-3 divide-y divide-border/60">
             {upcoming.map((s) => (
-              <div key={s._id} className="flex items-center justify-between gap-3 py-3">
+              <div key={s.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex size-9 items-center justify-center rounded-md border border-border/80 bg-secondary">
                     <CalendarClock className="size-4 text-muted-foreground" />
                   </div>
                   <div>
-                    <p className="text-sm font-medium">{s.customer?.name ?? "Unknown customer"}</p>
+                    <p className="text-sm font-medium">
+                      {s.customer?.name ?? `Customer #${s.customer_id}`}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {formatDate(s.scheduled_for)}
                       {s.campaign_name ? ` · ${s.campaign_name}` : ""}
@@ -135,7 +126,12 @@ export default function Schedule() {
                     </p>
                   </div>
                 </div>
-                <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => cancel(s._id)}>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => cancel(s.id)}
+                >
                   Cancel
                 </Button>
               </div>
@@ -150,9 +146,9 @@ export default function Schedule() {
             <p className="studio-label">Past &amp; cancelled</p>
             <div className="mt-3 divide-y divide-border/60">
               {past.map((s) => (
-                <div key={s._id} className="flex items-center justify-between py-2.5 text-sm">
+                <div key={s.id} className="flex items-center justify-between py-2.5 text-sm">
                   <span>
-                    {s.customer?.name ?? "Unknown"}{" "}
+                    {s.customer?.name ?? `Customer #${s.customer_id}`}{" "}
                     <span className="text-xs text-muted-foreground">
                       · {formatDate(s.scheduled_for)}
                     </span>
@@ -192,7 +188,7 @@ export default function Schedule() {
               >
                 <option value="">Select a customer…</option>
                 {customers?.map((c) => (
-                  <option key={c._id} value={c._id}>
+                  <option key={c.id} value={c.id}>
                     {c.name} · {c.phone_number}
                   </option>
                 ))}
@@ -207,7 +203,7 @@ export default function Schedule() {
               >
                 <option value="">No specific campaign</option>
                 {campaigns?.map((c) => (
-                  <option key={c._id} value={c._id}>
+                  <option key={c.id} value={c.id}>
                     {c.name}
                   </option>
                 ))}

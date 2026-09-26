@@ -10,7 +10,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import {
   LEAD_LABELS,
   OUTCOME_LABELS,
@@ -20,27 +21,18 @@ import {
   leadClass,
   statusClass,
 } from "@/lib/call-display";
-import { useQuery } from "convex/react";
 import { Filter, PhoneOutgoing } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 
-type CallRow = {
-  _id: string;
-  status: string;
-  outcome: string;
-  lead_status: string;
-  follow_up_required: boolean;
-  started_at: number;
-  duration_seconds?: number;
-  customer_id: string;
-  customer?: { name: string; phone_number: string } | null;
-};
-
 export default function Calls() {
-  const calls = useQuery(api.calls.list) as CallRow[] | undefined;
+  const callsResource = useApiResource(() => api.listCalls(), []);
+  const customersResource = useApiResource(() => api.listCustomers(), []);
   const [searchParams] = useSearchParams();
   const customerFilter = searchParams.get("customer") ?? "all";
+
+  const calls = callsResource.data;
+  const customers = customersResource.data;
 
   const [status, setStatus] = useState("all");
   const [lead, setLead] = useState("all");
@@ -50,7 +42,7 @@ export default function Calls() {
   const filtered = useMemo(() => {
     if (!calls) return [];
     return calls.filter((c) => {
-      if (customerFilter !== "all" && c.customer_id !== customerFilter) return false;
+      if (customerFilter !== "all" && String(c.customer_id) !== customerFilter) return false;
       if (status !== "all" && c.status !== status) return false;
       if (lead !== "all" && c.lead_status !== lead) return false;
       if (followUp === "required" && !c.follow_up_required) return false;
@@ -76,7 +68,7 @@ export default function Calls() {
     <AppShell
       active="/dashboard/calls"
       title="Call History"
-      description="Every call with outcome, lead status and follow-up state."
+      description="Every call with outcome, lead status and follow-up state — filtered server data from PostgreSQL."
     >
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -119,6 +111,28 @@ export default function Calls() {
             <SelectItem value="none">No follow-up</SelectItem>
           </SelectContent>
         </Select>
+        <Select
+          value={customerFilter}
+          onValueChange={(v) => {
+            const url = new URL(window.location.href);
+            if (v === "all") url.searchParams.delete("customer");
+            else url.searchParams.set("customer", v);
+            window.history.replaceState(null, "", url.toString());
+            window.dispatchEvent(new PopStateEvent("popstate"));
+          }}
+        >
+          <SelectTrigger className="h-8 w-[170px] bg-card text-xs">
+            <SelectValue placeholder="Customer" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All customers</SelectItem>
+            {customers?.map((c) => (
+              <SelectItem key={c.id} value={String(c.id)}>
+                {c.name}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -132,7 +146,7 @@ export default function Calls() {
 
       <Card className="studio-frame overflow-hidden shadow-none">
         <CardContent className="p-0">
-          {!calls && (
+          {callsResource.loading && (
             <div className="space-y-2 p-5">
               {Array.from({ length: 5 }).map((_, i) => (
                 <div key={i} className="h-9 animate-pulse rounded bg-muted" />
@@ -140,7 +154,11 @@ export default function Calls() {
             </div>
           )}
 
-          {calls && filtered.length === 0 && (
+          {callsResource.error && (
+            <div className="p-10 text-center text-sm text-destructive">{callsResource.error}</div>
+          )}
+
+          {calls && filtered.length === 0 && !callsResource.error && (
             <div className="flex flex-col items-center gap-2 p-12 text-center">
               <PhoneOutgoing className="size-5 text-muted-foreground" />
               <p className="text-sm font-medium">No calls match these filters</p>
@@ -162,31 +180,45 @@ export default function Calls() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-border/80 bg-secondary/50 text-left">
-                    {["Customer", "Phone", "Date", "Duration", "Status", "Outcome", "Lead", "Follow-up"].map(
-                      (h) => (
-                        <th
-                          key={h}
-                          className="px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground"
-                        >
-                          {h}
-                        </th>
-                      ),
-                    )}
+                    {[
+                      "Customer",
+                      "Phone",
+                      "Date",
+                      "Duration",
+                      "Status",
+                      "Outcome",
+                      "Lead",
+                      "Follow-up",
+                    ].map((h) => (
+                      <th
+                        key={h}
+                        className="px-4 py-2.5 text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground"
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
                 </thead>
                 <tbody>
                   {filtered.map((call) => (
-                    <tr key={call._id} className="border-b border-border/50 last:border-0 hover:bg-accent/30">
+                    <tr
+                      key={call.id}
+                      className="border-b border-border/50 last:border-0 hover:bg-accent/30"
+                    >
                       <td className="px-4 py-3">
                         <Link
-                          to={`/dashboard/calls/${call._id}`}
+                          to={`/dashboard/calls/${call.id}`}
                           className="font-medium hover:underline"
                         >
                           {call.customer?.name ?? "Unknown"}
                         </Link>
                       </td>
-                      <td className="px-4 py-3 text-muted-foreground">{call.customer?.phone_number}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{formatDate(call.started_at)}</td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {call.customer?.phone_number}
+                      </td>
+                      <td className="px-4 py-3 text-muted-foreground">
+                        {formatDate(call.started_at)}
+                      </td>
                       <td className="px-4 py-3 tabular-nums text-muted-foreground">
                         {formatDuration(call.duration_seconds)}
                       </td>

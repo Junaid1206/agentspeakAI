@@ -1,232 +1,240 @@
-# AgentSpeak AI — AI Voice Agents for Customer Outreach
+# AgentSpeak AI — AI-Powered Two-Way Calling Agent
 
-AgentSpeak AI places AI voice agents that call a business's customers on its behalf. The agent
-"calls" the customer (Browser Voice Demo over the microphone), conducts a natural two-way spoken
-conversation with **explicit conversation state**, extracts structured lead information, persists
-everything relationally, generates an AI summary after the call ends, and exposes it all through a
-Studio-themed admin area with campaigns, scheduling, a knowledge base and credit billing.
+A production-oriented MVP of an AI outbound calling agent: the agent contacts a customer
+(Browser Voice Demo over the microphone, or Twilio when configured), conducts a natural two-way
+spoken conversation with **explicit agentic state**, extracts structured lead information,
+persists the complete conversation in **PostgreSQL**, generates an **AI summary** after the call,
+and exposes everything through a professional admin dashboard.
 
-> **Honesty note:** calls in this build run in **Browser Voice Demo mode** — microphone in, AI
-> voice out. They are simulated conversations, never presented as real phone calls. A modular
-> Twilio calling provider is included for real telephony when credentials are supplied (see
-> [Real telephony mode](#real-telephony-mode)).
+> **Demo-mode honesty note:** with no telephony credentials the system runs in **Browser Voice
+> Demo** mode — microphone in, AI voice out over WebSocket. Conversations are simulated, and the UI
+> never presents them as real phone calls. The calling layer is modular
+> (`CallingProvider` interface); `TwilioCallingProvider` implements real outbound dialing via the
+> Twilio REST API and activates with credentials alone — no agent-code changes.
 
 ---
-
-## Project overview
-
-```
-Admin Dashboard  →  Create/select customer  →  Start Call
-        ↓
-Browser Voice Demo session (mic + Web Speech API)
-        ↓
-Speech-to-Text  →  Agent Orchestrator  →  LLM (structured JSON decision)
-        ↓                                            ↓
-Text-to-Speech  ←  response  ←  state update, next action, lead status
-        ↓
-Conversation continues → call ends → AI summary → dashboard report
-```
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-    Admin["Admin Dashboard (React + Vite)"] -->|" Convex reactive queries/mutations/actions "| Backend["Convex Backend"]
-    Backend --> Agent["Agent Orchestrator (agent/orchestrator.ts)"]
-    Agent --> State["Conversation State\n(agent_states table)"]
-    Agent --> LLM["LLMProvider\n(platform AI gateway, gpt-4o-mini)"]
-    Agent --> STT["SpeechToTextProvider\n(browser Web Speech API)"]
-    Agent --> TTS["TextToSpeechProvider\n(browser SpeechSynthesis)"]
-    Agent --> Calling["CallingProvider\nBrowserCallingProvider | TwilioCallingProvider"]
-    Agent --> DB[("Database\nusers · customers · calls ·\nconversation_messages ·\nagent_states · call_summaries · call_events")]
-    Calling --> Customer["Customer (browser demo session)"]
+    Admin["Admin Dashboard (React + Vite/Next.js-style SPA)"] -->|"REST + WebSocket"| API["FastAPI Backend (Python)"]
+    API --> Agent["Agent Orchestrator (app/agents/orchestrator.py)"]
+    Agent --> State["Conversation State (agent_states table)"]
+    Agent --> LLM["LLMProvider — OpenAI-compatible chat API (gpt-4o-mini)"]
+    Agent --> Calling["CallingProvider — BrowserCallingProvider | TwilioCallingProvider"]
+    Agent --> DB[("PostgreSQL — customers, calls, conversation_messages,\ncall_summaries, agent_states, call_events,\ncampaigns, scheduled_calls, orders, comments, knowledge")]
+    Voice["Browser STT (Web Speech API) + TTS (SpeechSynthesis)"] <-->|"audio in / speech out"| Customer["Customer (browser demo session)"]
+    Voice <-->|"transcript frames"| WS["WebSocket /ws/calls/{id}"]
+    WS --> Agent
 ```
 
-Key design points:
+Text form of the flow:
 
-- **Provider abstractions** — `LLMProvider`, `SpeechToTextProvider`, `TextToSpeechProvider`,
-  `CallingProvider`. The agent core contains zero vendor logic; each concern can be swapped.
-- **Explicit agent state** — nine structured fields (`customer_name`, `company_name`,
-  `requirement`, `ro_capacity`, `location`, `budget`, `timeline`, `application`,
-  `additional_requirements`) are persisted per call in `agent_states`.
-- **Structured decisions** — the LLM must answer in strict JSON; output is coerced/validated by
-  `agent/rules.ts` and never trusted blindly.
-- **Context strategy** — the prompt carries the structured state plus only the last 12 raw turns;
-  history length stays bounded regardless of call length.
+```
+Admin Dashboard → Start Call → FastAPI POST /api/calls
+    → CallingProvider.initiate_call()          (browser session | Twilio REST)
+    → POST /api/calls/{id}/agent/greeting      (AI opening message persisted)
+    → WebSocket /ws/calls/{id}                 (real-time channel)
+        customer speech → browser STT → {"type":"customer_message"}
+        → Agent Orchestrator: load state → LLM structured decision → persist → reply
+        → {"type":"ai_message"} → browser TTS → customer hears response
+    → call ends → POST /api/calls/{id}/end → AI summary from transcript → dashboard
+```
 
-## Features
+### The agent loop (per customer turn)
 
-- Customer CRUD with server-side validation (name length, phone digit count, normalization).
-- One-click **Start Call** per customer → opens a Browser Voice Demo session.
-- Real-time call console: Connecting → AI speaking → Listening → Processing phases, live
-  interim transcript, waveform animation, interrupt ("barge-in") button, end-call control.
-- **Silence handling**: 8 s of silence → "Are you still there?" → "I'll wait a little longer…" →
-  after 3 strikes the call ends gracefully. All prompts are persisted.
-- **Barge-in**: press *Interrupt & speak* while the AI is talking to stop TTS and re-open the mic
-  (documented limitation: automatic voice-activity barge-in is not provided by the Web Speech API).
-- Transcript, agent state (collected vs. missing fields), event log and AI summary per call.
-- Dashboard metrics (total/completed/failed calls, interested leads, follow-ups, average duration,
-  conversion rate, calls-by-status) — **all computed live from database records**.
-- Call history with filters: status, lead status, follow-up flag, customer, text search.
-- Event logging: `call_initiated`, `call_connected`, `agent_processing`, `agent_error`,
-  `tts_failed`, `customer_silent`, and more.
+1. Customer utterance is stored (`conversation_messages`, speaker `customer`).
+2. Current `agent_states` row + last 12 transcript turns are loaded (bounded context).
+3. The LLM must answer in **strict JSON**: `extracted_data`, `missing_fields`, `next_action`,
+   `response`, `should_end_call`, `lead_status`.
+4. The decision is coerced/validated (`agents/rules.py`) — output is never trusted blindly.
+5. Extracted fields are merged into state (filled fields never re-asked); the stage machine
+   advances `greeting → discovery → qualifying → closing`; lead status derives from conversation
+   behaviour (rejection phrases, positivity, new fields filled — sticky).
+6. State, AI message, call lead-status and follow-up flag are written to PostgreSQL.
+7. The response is returned over WebSocket and spoken by TTS.
 
-## Tech stack
+## Technology & free/trial usage (stated honestly)
 
-| Layer     | Technology                                                        |
-| --------- | ----------------------------------------------------------------- |
-| Frontend  | React 19 + Vite + TypeScript, Tailwind CSS 4, shadcn/ui, Framer Motion |
-| Backend   | Convex (queries / mutations / actions, internal functions)        |
-| Database  | Convex storage (relational-style tables with indexes)             |
-| AI        | Platform AI gateway — OpenAI-compatible `gpt-4o-mini`             |
-| Voice     | Web Speech API (STT + TTS) behind provider interfaces             |
-| Calling   | `BrowserCallingProvider` (demo) / `TwilioCallingProvider` (REST)  |
-| Tests     | Vitest (agent decision rules — 15 unit tests)                     |
+| Concern  | Used here | Free? | Notes |
+| -------- | --------- | ----- | ----- |
+| Backend  | Python 3.10+, FastAPI, Pydantic v2, SQLAlchemy 2 async | ✔ open source | OpenAPI docs auto-served at `/docs` |
+| Database | PostgreSQL (psql DDL + SQLAlchemy models, 1:1) | ✔ open source | SQLite only as the unit-test fixture |
+| LLM      | Any OpenAI-compatible chat API (`gpt-4o-mini` default) | pay-as-you-go; needs `LLM_API_KEY` | Provider-agnostic via `LLMProvider`; without a key the API returns clear config errors and summaries fall back deterministically |
+| STT      | Browser Web Speech API (demo mode) | ✔ free | Isolated behind `SpeechToTextProvider`; swap in Whisper/server STT without touching the agent |
+| TTS      | Browser SpeechSynthesis (demo mode) | ✔ free | Isolated behind `TextToSpeechProvider` |
+| Calling  | BrowserCallingProvider (demo) / TwilioCallingProvider (REST) | demo free; Twilio trial gives limited trial numbers | Trial accounts can only dial verified numbers — a known Twilio limitation, not hidden |
+| Payments | Stripe Checkout via REST when `STRIPE_SECRET_KEY` set | Stripe per-transaction | Otherwise a clearly-labelled simulated checkout (no charge) |
 
 ## Project structure
 
 ```
-src/
-  convex/                     # backend
-    schema.ts                 # all tables + validators
-    customers.ts              # customer CRUD (validated)
-    calls.ts                  # call lifecycle queries/mutations
-    callsInternals.ts         # internal q/m used by agent actions
-    dashboard.ts              # stats computed from DB
-    config.ts                 # capability status
-    agent/
-      rules.ts                # pure decision rules (tested)
-      llm.ts                  # LLMProvider implementation
-      orchestrator.ts         # greeting / turn / silence / summarize actions
+/backend
+  main.py                  FastAPI app: CORS, routers, startup, health
+  app/
+    config.py              pydantic-settings (.env)
+    db.py                  async engine + session dependency
+    models.py              SQLAlchemy models (mirror schema.sql)
+    schemas.py             Pydantic request/response models
+    api_customers.py       Customer CRUD
+    api_calls.py           Call lifecycle + agent endpoints
+    api_misc.py            Stats, campaigns, schedule, comments, knowledge, billing
+    ws.py                  WebSocket /ws/calls/{id} real-time channel
+    agents/
+      rules.py             Pure decision rules (unit-tested)
+      llm.py               LLMProvider implementation (OpenAI-compatible, httpx)
+      orchestrator.py      Greeting / turn / silence / summary services
     calling/
-      providers.ts            # CallingProvider abstraction (browser | twilio)
-    lib/validation.ts         # phone/name validators (pure)
-  hooks/
-    use-voice-call.ts         # browser voice session (STT/TTS + agent loop)
-  lib/voice/
-    stt.ts                    # SpeechToTextProvider (browser impl)
-    tts.ts                    # TextToSpeechProvider (browser impl)
-  pages/
-    Landing.tsx               # Studio-themed landing
-    dashboard/
-      Overview.tsx  Customers.tsx  Calls.tsx  CallDetail.tsx  CallConsole.tsx
-tests/
-  agent-rules.test.ts         # unit tests (no external APIs)
+      providers.py         CallingProvider: browser + Twilio REST
+    voice/
+      providers.py         STT/TTS interfaces + browser bridge docs
+  tests/
+    conftest.py            In-memory async DB + FakeLLM (no external APIs)
+    test_rules.py          14 pure-rule unit tests
+    test_api.py            17 API tests incl. mocked-LLM agent loop
+    test_providers.py      Provider behaviour + credential errors
+    test_live_postgres.py  Live smoke test against real PostgreSQL
+  requirements.txt
+  pytest.ini
+
+/frontend  (project root — React + Vite SPA with Next.js-style routing)
+  src/pages/dashboard/     Overview, Customers, Calls, CallDetail, CallConsole,
+                           Catalog, CampaignDetail, Schedule, Knowledge, Billing
+  src/hooks/               use-voice-call-rest (WebSocket session), use-api-resource
+  src/lib/api.ts           Typed FastAPI client
+  src/lib/voice/           STT/TTS browser providers
+
+/database
+  schema.sql               Canonical PostgreSQL DDL
 ```
 
-## Running the app
+## Setup instructions
 
-This project runs as a managed Freebuff web app: the dev server and Convex dev process are run by
-the platform; your edits hot-reload in the preview. For local reproduction outside the platform:
+1. **Clone** the repository.
+2. **Backend dependencies**
+   ```bash
+   cd backend
+   python3 -m venv .venv && source .venv/bin/activate
+   pip install -r requirements.txt
+   ```
+3. **Configure environment** — create `backend/.env` (see `.env.example` at repo root):
+   ```
+   DATABASE_URL=postgresql+asyncpg://agentspeak:agentspeak@localhost:5432/agentspeak
+   LLM_API_KEY=sk-...
+   LLM_MODEL=gpt-4o-mini
+   CALL_MODE=browser
+   CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+   ```
+   Never commit real keys. Frontend: set `VITE_API_URL=http://localhost:8000`.
+4. **PostgreSQL**
+   ```bash
+   createdb agentspeak
+   psql "$DATABASE_URL" -f database/schema.sql     # or let FastAPI create tables on startup
+   ```
+5. **Run FastAPI**
+   ```bash
+   cd backend && uvicorn main:app --reload --port 8000
+   ```
+   OpenAPI docs: http://localhost:8000/docs
+6. **Run the frontend**
+   ```bash
+   bun install && bun run dev      # or npm install && npm run dev
+   ```
+7. **Calling provider** — nothing to configure for browser demo mode. For real telephony set
+   `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` and `CALL_MODE=telephony`.
+8. **Start a test call** — sign in → Customers → Add customer → **Start Call** → allow the
+   microphone → talk to the agent → End call → open the call report.
 
-1. Install dependencies: `bun install`
-2. Set up a Convex deployment: `bunx convex dev` (generates `src/convex/_generated`)
-3. Start the frontend: `bun run dev`
-4. Open the app, sign in (email OTP or guest), and go to `/dashboard`.
+## Running tests
 
-No separate PostgreSQL instance is required — the Convex deployment is the database (the schema
-mirrors the assignment's relational design one-to-one: `customers`, `calls`,
-`conversation_messages`, `call_summaries`, plus `agent_states` and `call_events`).
-
-### Demo mode (Browser Voice Demo)
-
-1. Sign in → **Customers** → **Add customer** (name + phone required).
-2. Press **Start Call** on the customer card → the live console opens.
-3. Press **Start voice session** and allow the microphone.
-4. Talk naturally: Aria greets, asks about capacity/location/budget/timeline/application, and
-   never repeats an answered question. The right rail fills with collected fields.
-5. Press **End call** (or let the agent close) → the AI summary is generated from the transcript.
-6. Open the call from **Calls** to see the transcript, summary, agent state and event log.
-
-Requires Chrome/Edge (Web Speech API). The mode is always labelled "Browser Voice Demo" — it is
-not a phone call.
-
-### Real telephony mode
-
-`TwilioCallingProvider` (`src/convex/calling/providers.ts`) implements `initiateCall`, `endCall`
-and `getCallStatus` against the Twilio REST API and is selected by `CALLING_PROVIDER=twilio` /
-`CALL_MODE=telephony` in a self-hosted deployment. Provide `TWILIO_ACCOUNT_SID`,
-`TWILIO_AUTH_TOKEN`, `TWILIO_FROM_NUMBER` via environment variables; without them the provider
-raises a clear configuration error and the app stays in browser mode. The agent core is unchanged
-between modes — only the transport swaps.
-
-## AI workflow (agent state & decision loop)
-
-1. Customer speech is stored as a `conversation_messages` row (speaker `customer`).
-2. The orchestrator loads the latest `agent_states` row + recent transcript.
-3. The LLM receives: system prompt (persona, rules) + structured state + last 12 turns.
-4. It must return strict JSON: `extracted_data`, `missing_fields`, `next_action`, `response`,
-   `should_end_call`, `lead_status`.
-5. The decision is coerced/validated (`coerceDecision`); extracted fields are merged into state
-   (filled fields are never overwritten by blanks); stage machine advances
-   `greeting → discovery → qualifying → closing`.
-6. State, AI message, lead status and follow-up flags are persisted; the response is spoken.
-7. On call end, `summarize` action generates the structured summary from the actual transcript and
-   updates the call row.
+```bash
+cd backend && python -m pytest -q
+```
+35 tests pass with **no network access**: pure agent rules, full API flows with a scripted
+FakeLLM, provider credential handling, dashboard statistics. `tests/test_live_postgres.py`
+additionally verifies the whole flow against a real PostgreSQL instance when `LIVE_DB_URL` is set.
 
 ## Database schema
 
-| Table                  | Purpose |
-| ---------------------- | ------- |
-| `customers`            | name, phone, company, purpose, product (indexed by created_at, phone) |
-| `calls`                | customer FK, mode, direction, status, outcome, lead_status, follow-up, duration, error |
-| `conversation_messages`| call FK, speaker (customer/ai/system), message, sequence, metadata, timestamp |
-| `call_summaries`       | call FK, summary, intent, key requirements, budget, timeline, location, application, lead/outcome |
-| `agent_states`         | call FK, collected fields, stage, turn count |
-| `call_events`          | call FK, event name, detail, timestamp (debug/audit trail) |
-| `campaigns`            | catalog of outbound programs the agent calls about (product, price, highlights) |
-| `scheduled_calls`      | pre-booked call slots with campaign context and agent notes |
-| `orders`               | credit-pack purchases (Stripe or simulated checkout) |
-| `call_comments`        | team notes on customers and specific calls |
-| `knowledge_posts`      | published playbooks and scripts |
-| `users`                | managed by Convex Auth (email OTP + anonymous) |
+`database/schema.sql` (canonical) — SQLAlchemy models mirror it exactly.
+
+| Table | Purpose |
+| ----- | ------- |
+| `customers` | name, phone (validated), company, purpose, product |
+| `calls` | customer FK, provider_call_id, mode, direction, status, outcome, lead_status, follow-up, duration, error |
+| `conversation_messages` | call FK, speaker (customer/ai/system), message, sequence, JSONB metadata, timestamp |
+| `call_summaries` | call FK (unique), summary, intent, key requirements (JSONB), budget, timeline, location, application, lead/outcome |
+| `agent_states` | call FK (unique), collected JSONB, missing_fields JSONB, stage, turn count |
+| `call_events` | call FK, event, detail — full audit trail (call_initiated, agent_error, customer_silent, …) |
+| `campaigns` | catalog of outbound programs the agent calls about |
+| `scheduled_calls` | pre-booked slots with campaign context + notes |
+| `orders` | credit-pack purchases (Stripe/simulated) |
+| `call_comments` | team notes per customer/call |
+| `knowledge_posts` | published playbooks |
+
+Foreign keys use `ON DELETE CASCADE` (customer→calls→messages/summaries/states/events); indexes
+cover every hot query path (call transcripts by sequence, calls by customer/status, events by call).
+
+## API documentation
+
+Interactive OpenAPI at `/docs`. Highlights:
+
+```
+POST   /api/customers                     create (validated phone + name)
+GET    /api/customers?search=             list/search
+GET/PUT/DELETE /api/customers/{id}        read/update/delete (cascade)
+
+POST   /api/calls                         initiate (dials via provider / opens browser session)
+GET    /api/calls, /api/calls/{id}        list / detail
+GET    /api/calls/{id}/transcript         full ordered transcript
+GET    /api/calls/{id}/summary            AI summary (404 until generated)
+GET    /api/calls/{id}/state              agent state (collected / missing / stage)
+GET    /api/calls/{id}/events             event log
+POST   /api/calls/{id}/agent/greeting     opening message
+POST   /api/calls/{id}/agent/message      one agentic turn (structured JSON in/out)
+POST   /api/calls/{id}/agent/silence      silence strike + escalation
+POST   /api/calls/{id}/end                end call + generate summary
+DELETE /api/calls/{id}/force              abandon a stuck call
+
+WS     /ws/calls/{id}                     real-time frames (customer_message, ai_message, silence, …)
+
+GET    /api/dashboard/stats               live metrics from DB
+GET    /api/config/status                 capability report (no secrets)
++ campaigns / schedule / comments / knowledge / billing endpoints (see /docs)
+```
 
 ## Error handling
 
-- LLM failure → logged (`agent_error`), spoken fallback ("Could you repeat that?"), call survives.
-- STT failure / denied mic → explicit UI error state; silence timer still guards the session.
-- TTS failure → logged (`tts_failed`), conversation continues visually via transcript.
-- Customer silence → escalating prompts, then graceful end with `customer_unavailable` semantics.
-- Call already ended → actions reject with "Call has already ended."
-- DB-level validation → invalid phone/name rejected server-side with clear messages.
-- One failing call never affects others (per-call actions and per-call rows).
+| Scenario | Behaviour |
+| -------- | --------- |
+| LLM/API failure | Logged (`agent_error`), spoken fallback "Could you repeat that?", call survives; provider exceptions are caught and degraded |
+| Customer silent | 8 s timer → escalating prompts ("Are you still there?" → "I'll wait a little longer…") → graceful end after 3 strikes, all persisted |
+| Customer interrupts | Barge-in button cancels TTS and reopens the mic (WebSocket `interrupt` frame logged) |
+| STT denied/unavailable | Explicit UI error state; session fails safely, call row can be force-ended |
+| Invalid phone | Rejected server-side (Pydantic validator, 8–15 digits) with a clear message |
+| Provider not configured | Twilio raises a descriptive error; browser mode is the default |
+| Call already ended | `409 Conflict` on further turns; `force` endpoint clears stuck rows |
+| Summary generation fails | Call still ends; deterministic fallback summary stored; failure logged as event |
+| Backend unreachable | Dashboard shows an actionable API-unavailable banner |
 
-## Free/trial limitations (stated honestly)
+## Known limitations
 
-- **AI**: uses the platform's OpenAI-compatible gateway (`gpt-4o-mini`). No separate key needed in
-  this environment; self-hosted deployments need their own key via `LLM_API_KEY`.
-- **STT/TTS**: browser Web Speech API — free, but Chrome/Edge only and voice quality varies by OS.
-  Continuous automatic barge-in is **not** supported; a manual interrupt button is provided.
-- **Calling**: real phone calls require a Twilio account (paid after trial). This build ships the
-  provider abstraction + REST implementation but runs in **Browser Voice Demo** mode.
+- **No real outbound calls in the demo environment** — Twilio trial requires a verified destination
+  number and paid tier for unrestricted dialing; the browser demo demonstrates the identical agent
+  architecture with a different transport.
+- **Barge-in is manual** — the Web Speech API cannot cancel TTS on voice activity automatically;
+  the button + WebSocket frame implement it explicitly rather than faking it.
+- **STT/TTS are browser-side** in demo mode (Chrome/Edge required); the interfaces exist for a
+  server-side swap.
+- **Summaries/agent turns require `LLM_API_KEY`** — without it the API returns explicit
+  configuration errors and deterministic fallbacks; no fake AI text is generated.
+- Payments run in simulated mode unless Stripe keys are configured.
 
 ## Future improvements
 
-- Server-side streaming STT (e.g. Whisper) for lower latency and non-Chromium browsers.
-- True VAD-based barge-in over a media WebSocket (Twilio Media Streams / Pipecat).
-- Call recording storage and playback; multilingual voice sessions.
-- Authentication roles (admin/operator), CRM integrations, human-handoff escalation.
-- Production telephony scaling with queueing and retry policies.
-
-## Admin area capabilities
-
-- **Campaigns (catalog)** — browse and search outbound programs; each campaign has a product
-  brief, price label and highlights; detail pages include a launch panel (call now or schedule).
-- **Schedule** — book agent calls in advance with campaign context and notes; upcoming and past
-  lists with cancellation.
-- **Billing & credits** — 1 credit = 1 call minute. Credit packs checkout through **Stripe** when
-  `STRIPE_SECRET_KEY` is configured (hosted Checkout via REST, order completed from webhook-style
-  confirmation); without keys, a clearly-labelled simulated checkout completes the demo purchase.
-  Calls require at least one credit to start.
-- **Knowledge base** — the team publishes playbooks and scripts; searchable list and detail pages.
-- **Comments** — team notes per customer and per call, shown alongside transcripts.
-
-## Testing
-
-```
-bun run test        # 15 unit tests: missing-field detection, stage machine,
-                    # lead-status derivation, silence policy, decision coercion,
-                    # JSON salvage parsing
-```
-
-External APIs are never called in tests; agent rules are pure functions.
+- Server-side streaming STT (Whisper) and cloud TTS for lower latency and non-Chromium browsers.
+- Twilio Media Streams for full-duplex audio with true VAD barge-in.
+- Multilingual voice sessions; call recording storage and playback.
+- Authentication/roles on the FastAPI side (currently dev-level, CORS-scoped, no secrets exposed).
+- CRM integrations, human-handoff escalation, retry/queue policies for telephony scale.

@@ -2,10 +2,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
 import { titleCase } from "@/lib/call-display";
-import { useVoiceCall, type CallPhase } from "@/hooks/use-voice-call";
-import { useQuery } from "convex/react";
+import { useVoiceCallRest, type CallPhase } from "@/hooks/use-voice-call-rest";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import {
   Bot,
   Hand,
@@ -18,7 +18,6 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { cn } from "@/lib/utils";
-import { useState } from "react";
 
 const PHASE_LABEL: Record<CallPhase, string> = {
   idle: "Ready",
@@ -44,19 +43,19 @@ const PHASE_TONE: Record<CallPhase, string> = {
 
 export default function CallConsole() {
   const { callId } = useParams<{ callId: string }>();
-  const call = useQuery(api.calls.get, callId ? { id: callId as never } : "skip");
-  const dbTranscript = useQuery(
-    api.calls.transcript,
-    callId ? { call_id: callId as never } : "skip",
+  const numericId = callId ? Number(callId) : null;
+  const callResource = useApiResource(
+    () => (numericId ? api.getCall(numericId) : Promise.resolve(null)),
+    [numericId],
   );
-  const agentState = useQuery(api.calls.agentState, callId ? { call_id: callId as never } : "skip");
-  const voice = useVoiceCall(callId ?? null);
+  const call = callResource.data;
+  const voice = useVoiceCallRest(numericId);
 
   const isActive = !["ended", "failed"].includes(voice.phase);
-  const missing: string[] = agentState?.missing_fields ?? [];
-  const collected = Object.entries(
-    ((agentState?.collected ?? {}) as Record<string, string | null>),
-  ).filter(([, v]) => typeof v === "string" && v.trim());
+  const collected = Object.entries(voice.agentState?.collected ?? {}).filter(
+    ([, v]) => typeof v === "string" && v.trim(),
+  );
+  const missing = voice.agentState?.missing_fields ?? [];
 
   return (
     <AppShell
@@ -66,12 +65,10 @@ export default function CallConsole() {
     >
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {/* Conversation stage */}
           <Card className="studio-frame shadow-none">
             <CardContent className="p-6">
               <div className="flex flex-col items-center gap-5 py-4">
                 <div className="flex items-center gap-8">
-                  {/* Customer (you) */}
                   <div className="flex flex-col items-center gap-2">
                     <div
                       className={cn(
@@ -88,14 +85,17 @@ export default function CallConsole() {
                     </span>
                   </div>
 
-                  {/* Waveform */}
                   <div className="flex h-10 items-center gap-1">
                     {Array.from({ length: 16 }).map((_, i) => (
                       <span
                         key={i}
                         className="w-1 rounded-full bg-muted-foreground/40"
                         style={{
-                          height: `${voice.phase === "ai_speaking" || voice.phase === "listening" ? 6 + ((i * 7) % 26) : 5}px`,
+                          height: `${
+                            voice.phase === "ai_speaking" || voice.phase === "listening"
+                              ? 6 + ((i * 7) % 26)
+                              : 5
+                          }px`,
                           animation:
                             voice.phase === "ai_speaking" || voice.phase === "listening"
                               ? `pulse 1s ease-in-out ${i * 60}ms infinite alternate`
@@ -105,7 +105,6 @@ export default function CallConsole() {
                     ))}
                   </div>
 
-                  {/* AI */}
                   <div className="flex flex-col items-center gap-2">
                     <div
                       className={cn(
@@ -132,17 +131,10 @@ export default function CallConsole() {
                 ) : null}
 
                 {voice.phase === "idle" && (
-                  <div className="flex flex-col items-center gap-2">
-                    <Button onClick={() => voice.start()} size="lg" className="gap-2">
-                      <Play className="size-4" />
-                      Start voice session
-                    </Button>
-                    <span className="text-xs text-muted-foreground">
-                      {voice.noCredits
-                        ? "No calling credits — top up on the Billing page."
-                        : `${voice.credits} calling credit${voice.credits === 1 ? "" : "s"} available`}
-                    </span>
-                  </div>
+                  <Button onClick={() => voice.start()} size="lg" className="gap-2">
+                    <Play className="size-4" />
+                    Start voice session
+                  </Button>
                 )}
 
                 {isActive && voice.phase !== "idle" && (
@@ -160,9 +152,9 @@ export default function CallConsole() {
                   </div>
                 )}
 
-                {voice.phase === "ended" && callId ? (
+                {voice.phase === "ended" && numericId ? (
                   <Button asChild size="sm">
-                    <Link to={`/dashboard/calls/${callId}`}>View call report</Link>
+                    <Link to={`/dashboard/calls/${numericId}`}>View call report</Link>
                   </Button>
                 ) : null}
 
@@ -175,7 +167,6 @@ export default function CallConsole() {
             </CardContent>
           </Card>
 
-          {/* Live transcript */}
           <Card className="studio-frame shadow-none">
             <CardContent className="p-5">
               <div className="flex items-center gap-2">
@@ -186,14 +177,14 @@ export default function CallConsole() {
                 </span>
               </div>
               <div className="mt-4 max-h-[360px] space-y-3 overflow-y-auto pr-1">
-                {(dbTranscript ?? voice.transcript).length === 0 && (
+                {voice.transcript.length === 0 && (
                   <p className="py-10 text-center text-sm text-muted-foreground">
                     The conversation appears here in real time.
                   </p>
                 )}
-                {(dbTranscript ?? voice.transcript).map((m) => (
+                {voice.transcript.map((m) => (
                   <div
-                    key={(m as { _id?: string; sequence_number: number })._id ?? m.sequence_number}
+                    key={m.sequence_number}
                     className={cn(
                       "rounded-lg border p-3",
                       m.speaker === "customer"
@@ -223,7 +214,6 @@ export default function CallConsole() {
           </Card>
         </div>
 
-        {/* Right rail */}
         <div className="space-y-4">
           <Card className="studio-frame shadow-none">
             <CardContent className="p-5">
@@ -239,7 +229,9 @@ export default function CallConsole() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Mode</span>
-                  <span className="font-medium">Browser Voice Demo</span>
+                  <span className="font-medium">
+                    {call?.mode === "telephony" ? "Telephony" : "Browser Voice Demo"}
+                  </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Mic</span>
@@ -272,18 +264,16 @@ export default function CallConsole() {
                 ))}
               </div>
               {missing.length > 0 && (
-                <>
-                  <div className="studio-hairline mt-4 pt-3">
-                    <p className="text-xs text-muted-foreground">Still needed</p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
-                      {missing.map((f) => (
-                        <Badge key={f} variant="outline" className="text-muted-foreground">
-                          {titleCase(f)}
-                        </Badge>
-                      ))}
-                    </div>
+                <div className="studio-hairline mt-4 pt-3">
+                  <p className="text-xs text-muted-foreground">Still needed</p>
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {missing.map((f) => (
+                      <Badge key={f} variant="outline" className="text-muted-foreground">
+                        {titleCase(f)}
+                      </Badge>
+                    ))}
                   </div>
-                </>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -293,9 +283,9 @@ export default function CallConsole() {
               <p className="studio-label">How it works</p>
               <ol className="mt-3 list-inside list-decimal space-y-1.5 text-xs leading-relaxed text-muted-foreground">
                 <li>Your speech is transcribed by the browser STT engine.</li>
-                <li>The agent loads call state and sends context to the LLM.</li>
-                <li>The LLM returns a structured decision (extracted fields, next question).</li>
-                <li>The response is persisted, then spoken by TTS.</li>
+                <li>The utterance streams to FastAPI over WebSocket.</li>
+                <li>The agent loads state from PostgreSQL and queries the LLM.</li>
+                <li>The structured decision is persisted, returned and spoken.</li>
               </ol>
               <div className="mt-3 flex items-center gap-2">
                 <Mic className="size-3.5 text-muted-foreground" />

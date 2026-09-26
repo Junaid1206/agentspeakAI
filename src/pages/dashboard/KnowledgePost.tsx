@@ -1,24 +1,29 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { AppShell } from "@/components/AppShell";
-import { api } from "@/convex/_generated/api";
-import { useQuery } from "convex/react";
+import { useApiResource } from "@/hooks/use-api-resource";
+import { api } from "@/lib/api";
 import { ArrowLeft, BookOpen } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { formatDate } from "@/lib/call-display";
 
 export default function KnowledgePost() {
   const { postId } = useParams<{ postId: string }>();
-  const post = useQuery(api.knowledge.get, postId ? { id: postId as never } : "skip");
+  const id = postId ? Number(postId) : null;
+  const postResource = useApiResource(
+    () => (id ? api.getPost(id).catch(() => null) : Promise.resolve(null)),
+    [id],
+  );
+  const post = postResource.data;
 
-  if (post === undefined) {
+  if (postResource.loading) {
     return (
       <AppShell active="/dashboard/knowledge" title="Post">
         <div className="studio-frame h-64 animate-pulse rounded-lg" />
       </AppShell>
     );
   }
-  if (post === null) {
+  if (!post) {
     return (
       <AppShell active="/dashboard/knowledge" title="Post not found">
         <Button asChild variant="outline" size="sm">
