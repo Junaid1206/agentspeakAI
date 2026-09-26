@@ -9,6 +9,10 @@ const NAV = [
   { to: "/dashboard", label: "Overview" },
   { to: "/dashboard/customers", label: "Customers" },
   { to: "/dashboard/calls", label: "Calls" },
+  { to: "/dashboard/catalog", label: "Campaigns" },
+  { to: "/dashboard/schedule", label: "Schedule" },
+  { to: "/dashboard/knowledge", label: "Knowledge" },
+  { to: "/dashboard/billing", label: "Billing" },
 ];
 
 export function AppShell({
@@ -35,7 +39,7 @@ export function AppShell({
             <span className="flex size-7 items-center justify-center rounded-md border border-border/80 bg-card">
               <PhoneCall className="size-3.5 text-primary" />
             </span>
-            <span className="text-sm font-semibold tracking-tight">Aria Calling Studio</span>
+            <span className="text-sm font-semibold tracking-tight">AgentSpeak AI</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
             {NAV.map((item) => (
@@ -86,7 +90,7 @@ export function AppShell({
       <footer className="mx-auto w-full max-w-6xl px-4 pb-10 sm:px-6">
         <div className="studio-hairline pt-4">
           <p className="text-xs text-muted-foreground">
-            Browser Voice Demo · conversations are simulated, not real phone calls
+            AgentSpeak AI · Browser Voice Demo — conversations are simulated, not real phone calls
           </p>
         </div>
       </footer>

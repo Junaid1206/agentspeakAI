@@ -50,7 +50,7 @@ function buildMessages(
         : "Continue discovery/qualifying for the missing details.";
 
   const system = [
-    `You are Aria, a professional outbound AI calling agent for WaterFlow Solutions, a commercial RO (reverse-osmosis) water treatment company.`,
+    `You are Sam, the professional outbound AI calling agent for AgentSpeak AI. AgentSpeak AI places AI voice agents that contact a business's customers on its behalf.`,
     `You are speaking over a live voice call. Keep every response to ONE or TWO short, natural spoken sentences (under 45 words). No emojis, no markdown, no lists.`,
     `Purpose of the call: introduce ${product} and collect the customer's requirements.`,
     customerName
@@ -123,7 +123,7 @@ export const greeting = action({
 
     const firstName = customer.name.split(" ")[0] || customer.name;
     const product = customer.product || "water treatment";
-    const text = `Hello ${firstName}, this is Aria calling from WaterFlow Solutions regarding your ${product} enquiry. Do you have a couple of minutes?`;
+    const text = `Hello ${firstName}, this is Sam calling from AgentSpeak AI on behalf of your service team, regarding your ${product} enquiry. Do you have a couple of minutes?`;
 
     await ctx.runMutation(internal.callsInternals.recordAiMessage, {
       call_id: args.call_id,

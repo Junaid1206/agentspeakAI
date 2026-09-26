@@ -178,6 +178,79 @@ const schema = defineSchema(
       detail: v.optional(v.string()),
       created_at: v.number(),
     }).index("by_call", ["call_id"]),
+
+    // ---------------------------------------------------------------------
+    // AgentSpeak AI — campaigns, scheduling, billing, comments, knowledge
+    // ---------------------------------------------------------------------
+
+    // A product the AI agent calls customers about (the catalog).
+    campaigns: defineTable({
+      name: v.string(),
+      product: v.string(),
+      description: v.optional(v.string()),
+      price: v.number(), // display price in INR
+      price_label: v.string(),
+      category: v.string(),
+      highlights: v.array(v.string()),
+      active: v.boolean(),
+      created_at: v.number(),
+    }).index("by_created_at", ["created_at"]),
+
+    // Pre-booked call slots created from the customer area or schedule page.
+    scheduled_calls: defineTable({
+      customer_id: v.id("customers"),
+      campaign_id: v.optional(v.id("campaigns")),
+      campaign_name: v.optional(v.string()),
+      scheduled_for: v.number(),
+      notes: v.optional(v.string()),
+      status: v.union(
+        v.literal("scheduled"),
+        v.literal("completed"),
+        v.literal("cancelled"),
+      ),
+      created_by: v.id("users"),
+      created_at: v.number(),
+    })
+      .index("by_scheduled_for", ["scheduled_for"])
+      .index("by_customer", ["customer_id"]),
+
+    // Credit packs purchased for calling minutes.
+    orders: defineTable({
+      user_id: v.id("users"),
+      pack_key: v.string(),
+      pack_name: v.string(),
+      credits: v.number(),
+      amount_usd: v.number(),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("paid"),
+        v.literal("simulated"),
+        v.literal("cancelled"),
+      ),
+      provider: v.string(), // "stripe" | "simulated"
+      provider_ref: v.optional(v.string()),
+      created_at: v.number(),
+      paid_at: v.optional(v.number()),
+    }).index("by_user", ["user_id"]),
+
+    // Optional per-customer notes shown to the agent and in call reports.
+    call_comments: defineTable({
+      call_id: v.optional(v.id("calls")),
+      customer_id: v.id("customers"),
+      author: v.string(),
+      body: v.string(),
+      created_at: v.number(),
+    }).index("by_customer", ["customer_id"]),
+
+    // Postable content: playbooks and scripts the team publishes.
+    knowledge_posts: defineTable({
+      title: v.string(),
+      body: v.string(),
+      summary: v.optional(v.string()),
+      author: v.string(),
+      published: v.boolean(),
+      created_at: v.number(),
+    }).index("by_created_at", ["created_at"]),
   },
   {
     schemaValidation: false,

@@ -18,11 +18,12 @@ import {
 } from "lucide-react";
 import { Link, useParams } from "react-router";
 import { cn } from "@/lib/utils";
+import { useState } from "react";
 
 const PHASE_LABEL: Record<CallPhase, string> = {
   idle: "Ready",
   connecting: "Connecting…",
-  ai_speaking: "Aria is speaking…",
+  ai_speaking: "Sam is speaking…",
   listening: "Listening…",
   processing: "Processing…",
   ending: "Ending call…",
@@ -116,7 +117,7 @@ export default function CallConsole() {
                     >
                       <Bot className="size-6 text-muted-foreground" />
                     </div>
-                    <span className="text-xs text-muted-foreground">Aria (AI agent)</span>
+                    <span className="text-xs text-muted-foreground">Sam (AI agent)</span>
                   </div>
                 </div>
 
@@ -131,10 +132,17 @@ export default function CallConsole() {
                 ) : null}
 
                 {voice.phase === "idle" && (
-                  <Button onClick={() => voice.start()} size="lg" className="gap-2">
-                    <Play className="size-4" />
-                    Start voice session
-                  </Button>
+                  <div className="flex flex-col items-center gap-2">
+                    <Button onClick={() => voice.start()} size="lg" className="gap-2">
+                      <Play className="size-4" />
+                      Start voice session
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      {voice.noCredits
+                        ? "No calling credits — top up on the Billing page."
+                        : `${voice.credits} calling credit${voice.credits === 1 ? "" : "s"} available`}
+                    </span>
+                  </div>
                 )}
 
                 {isActive && voice.phase !== "idle" && (
@@ -204,7 +212,7 @@ export default function CallConsole() {
                         <Square className="size-3 text-muted-foreground" />
                       )}
                       <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                        {m.speaker === "ai" ? "Aria (AI)" : m.speaker === "customer" ? "You" : "System"}
+                        {m.speaker === "ai" ? "Sam (AI)" : m.speaker === "customer" ? "You" : "System"}
                       </span>
                     </div>
                     <p className="text-sm leading-relaxed">{m.message}</p>

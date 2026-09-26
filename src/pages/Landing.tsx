@@ -22,7 +22,7 @@ function Wordmark() {
       <span className="flex size-7 items-center justify-center rounded-md border border-border/80 bg-card">
         <PhoneCall className="size-3.5 text-primary" />
       </span>
-      <span className="text-sm font-semibold tracking-tight">Aria Calling Studio</span>
+      <span className="text-sm font-semibold tracking-tight">AgentSpeak AI</span>
     </Link>
   );
 }
@@ -64,7 +64,7 @@ export default function Landing() {
             transition={{ duration: 0.5 }}
             className="studio-label"
           >
-            AI Outbound Calling Agent
+            AI Voice Agents for Customer Outreach
           </motion.p>
           <motion.h1
             {...fadeUp}
@@ -78,8 +78,9 @@ export default function Landing() {
             transition={{ duration: 0.55, delay: 0.16 }}
             className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-muted-foreground"
           >
-            Aria calls, listens, qualifies and documents — an agentic voice workflow with explicit
-            conversation state, structured extraction and a complete audit trail in the dashboard.
+            Our AI agents call your customers, listen, qualify and document — an agentic voice
+            workflow with explicit conversation state, structured extraction and a complete audit
+            trail in the admin area.
           </motion.p>
           <motion.div
             {...fadeUp}
@@ -122,7 +123,7 @@ export default function Landing() {
               An agent that keeps its place in the story.
             </h2>
             <p className="mt-4 text-sm leading-relaxed text-muted-foreground">
-              Aria tracks nine structured fields across the call. Answered questions are never
+              The agent tracks nine structured fields across the call. Answered questions are never
               repeated; the next question is always chosen from what is still missing — capacity,
               location, budget, timeline, application.
             </p>
@@ -130,9 +131,9 @@ export default function Landing() {
           <div className="studio-frame rounded-lg p-5 shadow-none">
             <div className="space-y-3 text-sm">
               <div className="rounded-md border border-border/60 bg-card p-3">
-                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Aria (AI)</p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Agent (AI)</p>
                 <p className="mt-1 leading-relaxed">
-                  Hello Rahul, this is Aria from WaterFlow Solutions regarding your RO enquiry. What
+                  Hello Rahul, this is Sam from AgentSpeak AI, calling about your RO enquiry. What
                   capacity are you looking for?
                 </p>
               </div>
@@ -141,7 +142,7 @@ export default function Landing() {
                 <p className="mt-1 leading-relaxed">Around 500 LPH, for my hotel in Bangalore.</p>
               </div>
               <div className="rounded-md border border-border/60 bg-card p-3">
-                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Aria (AI)</p>
+                <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">Agent (AI)</p>
                 <p className="mt-1 leading-relaxed">
                   Great — a 500 LPH system for the hotel in Bangalore. What budget do you have in
                   mind?
@@ -248,7 +249,7 @@ export default function Landing() {
       {/* Footer */}
       <footer className="border-t border-border/80">
         <div className="mx-auto flex w-full max-w-5xl items-center justify-between px-6 py-6 text-xs text-muted-foreground">
-          <span>Aria Calling Studio</span>
+          <span>AgentSpeak AI</span>
           <span>Browser Voice Demo · simulated conversations</span>
         </div>
       </footer>

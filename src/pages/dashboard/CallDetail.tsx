@@ -25,6 +25,12 @@ import {
   Sparkles,
   User,
 } from "lucide-react";
+import { useMutation } from "convex/react";
+import { useState } from "react";
+import { Textarea } from "@/components/ui/textarea";
+import { api as apiRef } from "@/convex/_generated/api";
+import { toast } from "sonner";
+import { Send } from "lucide-react";
 import { Link, useParams } from "react-router";
 
 export default function CallDetail() {
@@ -34,6 +40,13 @@ export default function CallDetail() {
   const summary = useQuery(api.calls.summary, callId ? { call_id: callId as never } : "skip");
   const agentState = useQuery(api.calls.agentState, callId ? { call_id: callId as never } : "skip");
   const events = useQuery(api.calls.events, callId ? { call_id: callId as never } : "skip");
+  const comments = useQuery(
+    apiRef.comments.listForCall,
+    callId ? { call_id: callId as never } : "skip",
+  ) as
+    | Array<{ _id: string; author: string; body: string; created_at: number }>
+    | undefined;
+  const addComment = useMutation(apiRef.comments.add);
 
   if (call === undefined) {
     return (
@@ -65,6 +78,26 @@ export default function CallDetail() {
   const filledEntries = Object.entries(collected).filter(
     ([, v]) => typeof v === "string" && v.trim(),
   );
+  const [commentDraft, setCommentDraft] = useState("");
+  const [posting, setPosting] = useState(false);
+
+  const postComment = async () => {
+    if (!commentDraft.trim() || !callId) return;
+    setPosting(true);
+    try {
+      await addComment({
+        customer_id: call.customer_id as never,
+        call_id: callId as never,
+        body: commentDraft,
+      });
+      toast.success("Note added.");
+      setCommentDraft("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not add the note.");
+    } finally {
+      setPosting(false);
+    }
+  };
 
   return (
     <AppShell
@@ -127,7 +160,7 @@ export default function CallDetail() {
                         <Activity className="size-3.5" />
                       )}
                       <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
-                        {m.speaker === "ai" ? "Aria (AI)" : m.speaker === "customer" ? call.customer?.name ?? "Customer" : "System"}
+                        {m.speaker === "ai" ? "Sam (AI)" : m.speaker === "customer" ? call.customer?.name ?? "Customer" : "System"}
                       </span>
                       <span className="ml-auto text-[10px] text-muted-foreground">
                         {formatDate(m.timestamp)}
@@ -233,6 +266,44 @@ export default function CallDetail() {
                   {call.error_message}
                 </p>
               ) : null}
+
+              {/* Team notes on this call */}
+              <div className="studio-hairline mt-5 pt-4">
+                <p className="studio-label">Team notes</p>
+                <div className="mt-3 space-y-2">
+                  {comments?.length === 0 && (
+                    <p className="text-xs text-muted-foreground">No notes on this call yet.</p>
+                  )}
+                  {comments?.map((c) => (
+                    <div key={c._id} className="rounded-md border border-border/60 bg-secondary/40 p-2.5">
+                      <p className="text-[11px] font-medium text-muted-foreground">
+                        {c.author} · {formatDate(c.created_at)}
+                      </p>
+                      <p className="mt-1 text-sm leading-relaxed">{c.body}</p>
+                    </div>
+                  ))}
+                  {!comments && (
+                    <div className="h-8 animate-pulse rounded bg-muted" />
+                  )}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <Textarea
+                    rows={2}
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value)}
+                    placeholder="Add a note for the team about this call…"
+                    className="bg-card text-sm"
+                  />
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    disabled={posting || !commentDraft.trim()}
+                    onClick={postComment}
+                  >
+                    <Send className="size-3.5" />
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 

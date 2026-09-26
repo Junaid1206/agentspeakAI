@@ -1,9 +1,10 @@
-# Aria Calling Studio — AI-Powered Two-Way Calling Agent
+# AgentSpeak AI — AI Voice Agents for Customer Outreach
 
-An agentic AI outbound calling system: the agent "calls" a customer (Browser Voice Demo over the
-microphone), conducts a natural two-way spoken conversation with **explicit conversation state**,
-extracts structured lead information, persists everything relationally, generates an AI summary
-after the call ends, and exposes it all through a Studio-themed admin dashboard.
+AgentSpeak AI places AI voice agents that call a business's customers on its behalf. The agent
+"calls" the customer (Browser Voice Demo over the microphone), conducts a natural two-way spoken
+conversation with **explicit conversation state**, extracts structured lead information, persists
+everything relationally, generates an AI summary after the call ends, and exposes it all through a
+Studio-themed admin area with campaigns, scheduling, a knowledge base and credit billing.
 
 > **Honesty note:** calls in this build run in **Browser Voice Demo mode** — microphone in, AI
 > voice out. They are simulated conversations, never presented as real phone calls. A modular
@@ -173,6 +174,11 @@ between modes — only the transport swaps.
 | `call_summaries`       | call FK, summary, intent, key requirements, budget, timeline, location, application, lead/outcome |
 | `agent_states`         | call FK, collected fields, stage, turn count |
 | `call_events`          | call FK, event name, detail, timestamp (debug/audit trail) |
+| `campaigns`            | catalog of outbound programs the agent calls about (product, price, highlights) |
+| `scheduled_calls`      | pre-booked call slots with campaign context and agent notes |
+| `orders`               | credit-pack purchases (Stripe or simulated checkout) |
+| `call_comments`        | team notes on customers and specific calls |
+| `knowledge_posts`      | published playbooks and scripts |
 | `users`                | managed by Convex Auth (email OTP + anonymous) |
 
 ## Error handling
@@ -201,6 +207,19 @@ between modes — only the transport swaps.
 - Call recording storage and playback; multilingual voice sessions.
 - Authentication roles (admin/operator), CRM integrations, human-handoff escalation.
 - Production telephony scaling with queueing and retry policies.
+
+## Admin area capabilities
+
+- **Campaigns (catalog)** — browse and search outbound programs; each campaign has a product
+  brief, price label and highlights; detail pages include a launch panel (call now or schedule).
+- **Schedule** — book agent calls in advance with campaign context and notes; upcoming and past
+  lists with cancellation.
+- **Billing & credits** — 1 credit = 1 call minute. Credit packs checkout through **Stripe** when
+  `STRIPE_SECRET_KEY` is configured (hosted Checkout via REST, order completed from webhook-style
+  confirmation); without keys, a clearly-labelled simulated checkout completes the demo purchase.
+  Calls require at least one credit to start.
+- **Knowledge base** — the team publishes playbooks and scripts; searchable list and detail pages.
+- **Comments** — team notes per customer and per call, shown alongside transcripts.
 
 ## Testing
 

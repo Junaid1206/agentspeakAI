@@ -53,6 +53,12 @@ export function useVoiceCall(callId: string | null) {
   const silenceAction = useAction(api.agent.orchestrator.silence);
   const summarizeAction = useAction(api.agent.orchestrator.summarize);
 
+  // Credits: 1 credit = 1 call minute. Sessions need at least 1 credit to start.
+  const balance = useQuery(api.billing.myBalance) as
+    | { credits: number; orders: unknown[] }
+    | undefined;
+  const noCredits = (balance?.credits ?? 0) < 1;
+
   // Keep latest actions reachable from long-lived callbacks (recognition events).
   const actionsRef = useRef({ greetingAction, turnAction, silenceAction, summarizeAction });
   useEffect(() => {
@@ -213,6 +219,13 @@ export function useVoiceCall(callId: string | null) {
 
   const start = useCallback(async () => {
     if (startedRef.current || !callId) return;
+    if (noCredits) {
+      setError(
+        "No calling credits left. Top up your balance on the Billing page to run more sessions.",
+      );
+      setPhase("failed");
+      return;
+    }
     startedRef.current = true;
     setError(null);
     setPhase("connecting");
@@ -305,5 +318,7 @@ export function useVoiceCall(callId: string | null) {
     start,
     end,
     interrupt,
+    credits: balance?.credits ?? 0,
+    noCredits,
   };
 }
