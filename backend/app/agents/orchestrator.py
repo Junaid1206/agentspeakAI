@@ -10,6 +10,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy.orm import selectinload
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -97,6 +98,16 @@ async def handle_turn(
 ) -> dict:
     """One full agent turn for a customer utterance."""
     llm = llm or get_llm()
+        # Reload the call and customer inside the active DB session.
+    result = await db.execute(
+        select(models.Call)
+        .options(selectinload(models.Call.customer))
+        .where(models.Call.id == call.id)
+    )
+    call = result.scalar_one_or_none()
+
+    if call is None:
+        raise ValueError("Call not found.")
     settings = get_settings()
 
     if call.status in ("completed", "failed", "no_answer"):

@@ -1,4 +1,10 @@
-.env.local
-node_modules
-dist
-src/convex/_generated
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+.pytest_cache/
+node_modules/
+dist/
+*.py[cod]

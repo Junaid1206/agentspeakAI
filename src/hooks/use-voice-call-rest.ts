@@ -1,21 +1,10 @@
 // Voice call session over the FastAPI WebSocket protocol (/ws/calls/{id}).
-// Browser STT/TTS feed the socket; server agent decisions come back as frames.
-
 import { api } from "@/lib/api";
-import { BrowserSpeechToText } from "@/lib/voice/stt";
-import { BrowserTextToSpeech } from "@/lib/voice/tts";
+import { BrowserSpeechToText } from "@/lib/stt";
+import { BrowserTextToSpeech } from "@/lib/tts";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export type CallPhase =
-  | "idle"
-  | "connecting"
-  | "ai_speaking"
-  | "listening"
-  | "processing"
-  | "ending"
-  | "ended"
-  | "failed";
-
+export type CallPhase = "idle" | "connecting" | "ai_speaking" | "listening" | "processing" | "ending" | "ended" | "failed";
 export interface TranscriptItem {
   speaker: "customer" | "ai" | "system";
   message: string;
@@ -23,6 +12,7 @@ export interface TranscriptItem {
 }
 
 const SILENCE_TIMEOUT_MS = 8000;
+const WS_CONNECT_TIMEOUT_MS = 10000;
 
 export function useVoiceCallRest(callId: number | null) {
   const wsRef = useRef<WebSocket | null>(null);
@@ -34,32 +24,42 @@ export function useVoiceCallRest(callId: number | null) {
   const busyRef = useRef(false);
   const seqRef = useRef(0);
   const startedRef = useRef(false);
+  const speechTokenRef = useRef(0);
 
   const [phase, setPhaseState] = useState<CallPhase>("idle");
   const [transcript, setTranscript] = useState<TranscriptItem[]>([]);
   const [liveTranscript, setLiveTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [micPermission, setMicPermission] = useState<"unknown" | "granted" | "denied">("unknown");
-  const [agentState, setAgentState] = useState<{
-    collected: Record<string, string | null>;
-    missing_fields: string[];
-    stage: string;
-  } | null>(null);
+  const [agentState, setAgentState] = useState<{ collected: Record<string, string | null>; missing_fields: string[]; stage: string } | null>(null);
 
-  const setPhase = useCallback((p: CallPhase) => {
-    phaseRef.current = p;
-    setPhaseState(p);
+  const setPhase = useCallback((next: CallPhase) => {
+    phaseRef.current = next;
+    setPhaseState(next);
   }, []);
 
   const pushLocal = useCallback((speaker: TranscriptItem["speaker"], message: string) => {
     seqRef.current += 1;
-    setTranscript((prev) => [...prev, { speaker, message, sequence_number: seqRef.current }]);
+    setTranscript((previous) => [...previous, { speaker, message, sequence_number: seqRef.current }]);
   }, []);
 
   const clearSilenceTimer = useCallback(() => {
-    if (silenceTimer.current) {
-      clearTimeout(silenceTimer.current);
-      silenceTimer.current = null;
+    if (silenceTimer.current) clearTimeout(silenceTimer.current);
+    silenceTimer.current = null;
+  }, []);
+
+  const sendFrame = useCallback((frame: Record<string, unknown>): boolean => {
+    const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setError("Real-time connection is not ready. Please end this call and start a new one.");
+      return false;
+    }
+    try {
+      ws.send(JSON.stringify(frame));
+      return true;
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not send the voice message.");
+      return false;
     }
   }, []);
 
@@ -67,91 +67,96 @@ export function useVoiceCallRest(callId: number | null) {
     clearSilenceTimer();
     silenceTimer.current = setTimeout(() => {
       if (endedRef.current || phaseRef.current !== "listening" || !callId) return;
-      wsRef.current?.send(JSON.stringify({ type: "silence" }));
-      setPhase("processing");
+      if (sendFrame({ type: "silence" })) setPhase("processing");
     }, SILENCE_TIMEOUT_MS);
-  }, [callId, clearSilenceTimer, setPhase]);
+  }, [callId, clearSilenceTimer, sendFrame, setPhase]);
 
-  const speak = useCallback(
-    async (text: string) => {
-      clearSilenceTimer();
-      setLiveTranscript("");
-      setPhase("ai_speaking");
-      const tts = ttsRef.current;
-      if (!tts?.available) return;
-      try {
-        await tts.speak(text);
-      } catch {
-        /* TTS failure logged server-side; continue via transcript */
-      }
-    },
-    [clearSilenceTimer, setPhase],
-  );
+  const speak = useCallback(async (text: string): Promise<boolean> => {
+    clearSilenceTimer();
+    setLiveTranscript("");
+    const token = ++speechTokenRef.current;
+    setPhase("ai_speaking");
+    const tts = ttsRef.current;
+    if (!tts?.available) return true;
+    try {
+      await tts.speak(text);
+    } catch (error) {
+      setError(error instanceof Error ? `Voice playback failed: ${error.message}` : "Voice playback failed.");
+    }
+    return token === speechTokenRef.current && !endedRef.current;
+  }, [clearSilenceTimer, setPhase]);
 
   const startListening = useCallback(() => {
     if (endedRef.current) return;
     const stt = sttRef.current;
-    if (!stt?.available) return;
+    if (!stt?.available) {
+      setError("Speech recognition is not supported in this browser. Try a supported desktop Chrome browser.");
+      setPhase("failed");
+      return;
+    }
+    if (stt.isActive) return;
+    setPhase("listening");
     armSilenceTimer();
-    stt.start().catch(() => {
-      setError("Could not restart listening.");
+    stt.start().catch((error) => {
+      clearSilenceTimer();
+      if (endedRef.current) return;
+      setError(error instanceof Error ? `Could not start listening: ${error.message}` : "Could not start listening.");
+      setPhase("failed");
     });
-  }, [armSilenceTimer]);
+  }, [armSilenceTimer, clearSilenceTimer, setPhase]);
 
-  const endCallRest = useCallback(
-    async (reason: string) => {
-      if (endedRef.current || !callId) return;
-      endedRef.current = true;
-      clearSilenceTimer();
-      setPhase("ending");
-      sttRef.current?.stop();
-      ttsRef.current?.cancel();
-      try {
-        wsRef.current?.close();
-      } catch {
-        /* already closing */
-      }
-      try {
-        await api.endCall(callId, reason);
-      } catch (e) {
-        console.warn("[voice] end-call failed", e);
-      }
+  const endCallRest = useCallback(async (reason: string) => {
+    if (endedRef.current || !callId) return;
+    endedRef.current = true;
+    speechTokenRef.current += 1;
+    clearSilenceTimer();
+    setPhase("ending");
+    sttRef.current?.stop();
+    ttsRef.current?.cancel();
+    const ws = wsRef.current;
+    wsRef.current = null;
+    try { ws?.close(); } catch { /* already closed */ }
+    try {
+      await api.endCall(callId, reason);
       setPhase("ended");
-    },
-    [callId, clearSilenceTimer, setPhase],
-  );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Could not end the call on the server.";
+      setError(`Call ended locally, but server update failed: ${message}`);
+      setPhase("failed");
+    }
+  }, [callId, clearSilenceTimer, setPhase]);
 
-  const handleFinalUtterance = useCallback(
-    (text: string) => {
-      if (endedRef.current || busyRef.current || !callId) return;
-      const trimmed = text.trim();
-      if (!trimmed) {
-        startListening();
-        return;
-      }
-      busyRef.current = true;
-      clearSilenceTimer();
-      setLiveTranscript("");
-      pushLocal("customer", trimmed);
-      setPhase("processing");
-      wsRef.current?.send(JSON.stringify({ type: "customer_message", message: trimmed }));
-    },
-    [callId, clearSilenceTimer, pushLocal, setPhase, startListening],
-  );
+  const handleFinalUtterance = useCallback((text: string) => {
+    if (endedRef.current || busyRef.current || !callId) return;
+    const trimmed = text.trim();
+    if (!trimmed) { startListening(); return; }
+    busyRef.current = true;
+    clearSilenceTimer();
+    setLiveTranscript("");
+    pushLocal("customer", trimmed);
+    setPhase("processing");
+    if (!sendFrame({ type: "customer_message", message: trimmed })) {
+      busyRef.current = false;
+      setPhase("failed");
+    }
+  }, [callId, clearSilenceTimer, pushLocal, sendFrame, setPhase, startListening]);
 
   const start = useCallback(async () => {
     if (startedRef.current || !callId) return;
     startedRef.current = true;
+    endedRef.current = false;
+    busyRef.current = false;
     setError(null);
     setPhase("connecting");
 
     try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("This browser does not provide microphone access. Use HTTPS or localhost.");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      stream.getTracks().forEach((t) => t.stop());
+      stream.getTracks().forEach((track) => track.stop());
       setMicPermission("granted");
-    } catch {
+    } catch (error) {
       setMicPermission("denied");
-      setError("Microphone access was denied. Allow the microphone and try again.");
+      setError(error instanceof Error ? error.message : "Microphone access failed. Allow microphone access and retry.");
       setPhase("failed");
       startedRef.current = false;
       return;
@@ -160,120 +165,119 @@ export function useVoiceCallRest(callId: number | null) {
     const stt = new BrowserSpeechToText();
     const tts = new BrowserTextToSpeech();
     if (!stt.available || !tts.available) {
-      setError("This browser does not support the Web Speech API. Try Chrome or Edge.");
+      setError("This browser does not support the required Web Speech APIs. Try Chrome or Edge.");
       setPhase("failed");
       startedRef.current = false;
       return;
     }
-
     stt.onTranscript((text, isFinal) => {
+      if (endedRef.current) return;
       if (isFinal) {
         const finalText = stt.consumeTranscript();
         if (finalText) handleFinalUtterance(finalText);
-      } else {
-        setLiveTranscript(text);
-      }
+      } else setLiveTranscript(text);
     });
-    stt.onError((err) => {
-      if (err === "not-allowed" || err === "service-not-allowed") {
+    stt.onError((code) => {
+      if (endedRef.current) return;
+      if (code === "not-allowed" || code === "service-not-allowed") {
         setMicPermission("denied");
-        setError("Speech recognition was blocked. Allow microphone access and retry.");
+        setError("Speech recognition was blocked. Check browser microphone and speech permissions.");
         setPhase("failed");
+      } else if (code !== "no-speech" && code !== "aborted") {
+        setError(`Speech recognition error: ${code}`);
       }
     });
     sttRef.current = stt;
     ttsRef.current = tts;
 
-    // Greeting then socket.
     try {
       const { greeting } = await api.greeting(callId);
       pushLocal("ai", greeting);
-
       const ws = new WebSocket(api.wsUrl(callId));
       wsRef.current = ws;
+      await new Promise<void>((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error("Timed out connecting to the call server.")), WS_CONNECT_TIMEOUT_MS);
+        ws.onopen = () => { clearTimeout(timeout); resolve(); };
+        ws.onerror = () => { clearTimeout(timeout); reject(new Error("Could not connect to the real-time call server.")); };
+        ws.onclose = () => { clearTimeout(timeout); if (ws.readyState !== WebSocket.OPEN) reject(new Error("Call server closed the connection.")); };
+      });
       ws.onmessage = async (event) => {
-        const frame = JSON.parse(event.data as string);
+        let frame: Record<string, any>;
+        try { frame = JSON.parse(String(event.data)); }
+        catch { setError("Received an invalid message from the call server."); return; }
         switch (frame.type) {
           case "ai_message": {
-            pushLocal("ai", frame.message as string);
-            setAgentState((prev) => ({
-              collected: frame.collected ?? prev?.collected ?? {},
-              missing_fields: frame.missing_fields ?? prev?.missing_fields ?? [],
-              stage: frame.stage ?? prev?.stage ?? "discovery",
+            if (endedRef.current) return;
+            const message = String(frame.message ?? "");
+            pushLocal("ai", message);
+            setAgentState((previous) => ({
+              collected: frame.collected ?? previous?.collected ?? {},
+              missing_fields: frame.missing_fields ?? previous?.missing_fields ?? [],
+              stage: frame.stage ?? previous?.stage ?? "discovery",
             }));
             busyRef.current = false;
-            await speak(frame.message as string);
-            if (frame.should_end_call) {
-              await endCallRest("Agent completed the call objective.");
-            } else {
-              startListening();
-            }
+            const completed = await speak(message);
+            if (!completed || endedRef.current) return;
+            if (frame.should_end_call) await endCallRest("Agent completed the call objective.");
+            else startListening();
             break;
           }
           case "call_ended":
-            await endCallRest("Agent completed the call objective.");
+            if (!endedRef.current) await endCallRest("Agent completed the call objective.");
             break;
           case "error":
-            setError(frame.detail as string);
+            setError(String(frame.detail ?? "Call server error."));
             busyRef.current = false;
-            if (String(frame.detail).includes("already ended")) {
-              await endCallRest("Call already ended.");
-            } else {
-              startListening();
-            }
+            if (String(frame.detail).includes("already ended")) await endCallRest("Call already ended.");
+            else startListening();
             break;
-          default:
-            break;
+          default: break;
         }
       };
       ws.onerror = () => {
-        setError("Real-time connection lost.");
-        setPhase("failed");
+        if (!endedRef.current) { setError("Real-time connection lost."); setPhase("failed"); }
       };
-
-      await speak(greeting);
-      startListening();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to start the call.");
+      ws.onclose = () => {
+        if (!endedRef.current && phaseRef.current !== "failed") {
+          setError("Call connection closed unexpectedly.");
+          setPhase("failed");
+        }
+      };
+      const greetingFinished = await speak(greeting);
+      if (greetingFinished) startListening();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to start the call.";
+      setError(message);
       setPhase("failed");
       startedRef.current = false;
-    }
-  }, [callId, endCallRest, handleFinalUtterance, pushLocal, speak, startListening]);
-
-  const interrupt = useCallback(() => {
-    if (phaseRef.current !== "ai_speaking") return;
-    ttsRef.current?.cancel();
-    wsRef.current?.send(JSON.stringify({ type: "interrupt" }));
-    startListening();
-  }, [startListening]);
-
-  const end = useCallback(() => {
-    void endCallRest("Operator ended the call.");
-  }, [endCallRest]);
-
-  useEffect(() => {
-    return () => {
-      endedRef.current = true;
-      if (silenceTimer.current) clearTimeout(silenceTimer.current);
       sttRef.current?.stop();
       ttsRef.current?.cancel();
-      try {
-        wsRef.current?.close();
-      } catch {
-        /* noop */
-      }
-    };
+      try { wsRef.current?.close(); } catch { /* noop */ }
+    }
+  }, [callId, endCallRest, handleFinalUtterance, pushLocal, setPhase, speak, startListening]);
+
+  const interrupt = useCallback(() => {
+    if (endedRef.current || phaseRef.current !== "ai_speaking") return;
+    speechTokenRef.current += 1;
+    ttsRef.current?.cancel();
+    sttRef.current?.stop();
+    if (!sendFrame({ type: "interrupt" })) {
+      setPhase("failed");
+      return;
+    }
+    startListening();
+  }, [sendFrame, setPhase, startListening]);
+
+  const end = useCallback(() => { void endCallRest("Operator ended the call."); }, [endCallRest]);
+
+  useEffect(() => () => {
+    endedRef.current = true;
+    speechTokenRef.current += 1;
+    if (silenceTimer.current) clearTimeout(silenceTimer.current);
+    sttRef.current?.stop();
+    ttsRef.current?.cancel();
+    try { wsRef.current?.close(); } catch { /* noop */ }
   }, []);
 
-  return {
-    phase,
-    transcript,
-    liveTranscript,
-    error,
-    micPermission,
-    agentState,
-    start,
-    end,
-    interrupt,
-  };
+  return { phase, transcript, liveTranscript, error, micPermission, agentState, start, end, interrupt };
 }

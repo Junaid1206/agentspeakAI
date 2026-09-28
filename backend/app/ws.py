@@ -68,12 +68,20 @@ async def call_socket(websocket: WebSocket, call_id: int):
                 if not message:
                     continue
                 await websocket.send_json({"type": "phase", "phase": "processing"})
-                call = await _load_call(call_id)
-                if call is None:
-                    await websocket.send_json({"type": "error", "detail": "Call not found."})
-                    break
                 try:
                     async with SessionLocal() as db:
+                        result_db = await db.execute(
+                            select(models.Call).where(models.Call.id == call_id)
+                        )
+                        call = result_db.scalar_one_or_none()
+
+                        if call is None:
+                            await websocket.send_json({
+                                "type": "error",
+                                "detail": "Call not found."
+                            })
+                            break
+
                         result = await orchestrator.handle_turn(db, call, message)
                     await websocket.send_json(
                         {
@@ -86,10 +94,19 @@ async def call_socket(websocket: WebSocket, call_id: int):
                         }
                     )
                     if result["should_end_call"]:
-                        call = await _load_call(call_id)
                         async with SessionLocal() as db:
-                            await orchestrator.end_call(db, call, reason="Agent completed the objective.")
-                            await orchestrator.generate_summary(db, call)
+                            result_db = await db.execute(
+                                select(models.Call).where(models.Call.id == call_id)
+                            )
+                            call = result_db.scalar_one_or_none()
+
+                            if call is not None:
+                                await orchestrator.end_call(
+                                    db, call,
+                                    reason="Agent completed the objective."
+                                )
+                                await orchestrator.generate_summary(db, call)
+
                         await websocket.send_json({"type": "call_ended"})
                         break
                 except ValueError as exc:
