@@ -97,7 +97,20 @@ async def get_summary(call_id: int, db: AsyncSession = Depends(get_db)):
     )
     summary = result.scalar_one_or_none()
     if summary is None:
-        raise HTTPException(status_code=404, detail="Summary not generated yet.")
+        call = await _load_call(db, call_id)
+        if call.status not in ("completed", "failed", "no_answer"):
+            raise HTTPException(status_code=404, detail="Summary is available after the call ends.")
+        try:
+            await orchestrator.generate_summary(db, call)
+        except Exception as exc:  # noqa: BLE001 — report a useful error, never fabricate a summary
+            logger.warning("summary generation retry failed for call %s: %s", call_id, exc)
+            raise HTTPException(status_code=503, detail="Summary could not be generated. Please retry shortly.") from exc
+        result = await db.execute(
+            select(models.CallSummary).where(models.CallSummary.call_id == call_id)
+        )
+        summary = result.scalar_one_or_none()
+        if summary is None:
+            raise HTTPException(status_code=503, detail="Summary is not available yet.")
     return summary
 
 
