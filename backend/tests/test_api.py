@@ -251,3 +251,33 @@ async def test_dashboard_stats_from_db(client, customer, fake_llm, monkeypatch):
     assert stats["interested_leads"] == 1
     assert stats["total_customers"] == 1
     assert stats["calls_by_status"]["completed"] == 1
+
+
+async def test_fallback_rejects_unclear_budget_and_timeline():
+    from app.agents.orchestrator import _fallback_turn
+
+    collected, response, should_end, pending = _fallback_turn("15 to paper", {}, "budget")
+    assert collected == {}
+    assert "budget" in response.lower()
+    assert should_end is False
+    assert pending == "budget"
+
+    collected, response, should_end, pending = _fallback_turn("at home", {}, "timeline")
+    assert collected == {}
+    assert "When are you hoping" in response
+    assert should_end is False
+    assert pending == "timeline"
+
+
+async def test_fallback_normalizes_location_and_accepts_capacity():
+    from app.agents.orchestrator import _fallback_turn
+
+    collected, _, should_end, pending = _fallback_turn("add Bhopal", {}, "location")
+    assert collected["location"] == "Bhopal"
+    assert should_end is False
+    assert pending == "ro_capacity"
+
+    collected, _, should_end, pending = _fallback_turn("25", collected, "ro_capacity")
+    assert collected["ro_capacity"] == "25"
+    assert should_end is False
+    assert pending == "budget"
