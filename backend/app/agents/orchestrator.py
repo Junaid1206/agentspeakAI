@@ -208,6 +208,9 @@ async def handle_turn(
             logger.warning("LLM provider raised for call %s: %s", call.id, exc)
             outcome = {"ok": False, "data": None, "error": f"provider error: {exc}"}
 
+    if outcome["ok"] and rules.coerce_decision(outcome.get("data")) is None:
+        outcome = {"ok": False, "data": None, "error": "LLM decision failed validation"}
+
     await log_event(
         db,
         call.id,
@@ -224,7 +227,10 @@ async def handle_turn(
         state.stage = "discovery" if fallback_field else rules.stage_for(merged, stage)
         state.turn_count += 1
         state.updated_at = datetime.now(timezone.utc)
-        call.lead_status = "not_interested" if should_end and _DECLINE_RE.search(message or "") else (
+        declined = bool(_DECLINE_RE.search(message or "")) or (
+            pending_field is None and bool(re.fullmatch(r"(?:no|nope|nah)", (message or "").strip(), re.I))
+        )
+        call.lead_status = "not_interested" if should_end and declined else (
             "interested" if any(rules.is_filled(merged.get(f)) for f in _FALLBACK_FIELD_ORDER) else call.lead_status
         )
         call.silence_strike_count = 0
