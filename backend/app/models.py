@@ -43,7 +43,7 @@ class Customer(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    calls: Mapped[list["Call"]] = relationship(back_populates="customer")
+    calls: Mapped[list["Call"]] = relationship(back_populates="customer", passive_deletes=True)
 
 
 class Call(Base):
