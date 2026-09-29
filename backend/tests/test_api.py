@@ -281,3 +281,43 @@ async def test_fallback_normalizes_location_and_accepts_capacity():
     assert collected["ro_capacity"] == "25"
     assert should_end is False
     assert pending == "budget"
+
+async def test_fallback_rejects_suggestion_as_capacity():
+    from app.agents.orchestrator import _fallback_turn
+
+    collected, response, should_end, pending = _fallback_turn("Can you give me options?", {}, "ro_capacity")
+    assert collected == {}
+    assert should_end is False
+    assert pending == "ro_capacity"
+    assert "capacity" in response.lower()
+
+
+async def test_llm_is_retried_after_fallback_turn(client, call, monkeypatch):
+    from app.api_calls import orchestrator
+
+    class RecoveringLLM:
+        name = "recovering-test"
+        def __init__(self):
+            self.calls = 0
+        async def complete_json(self, *args, **kwargs):
+            self.calls += 1
+            if self.calls == 1:
+                return {"ok": False, "data": None, "error": "LLM HTTP 429"}
+            return {"ok": True, "data": {
+                "extracted_data": {"requirement": "commercial RO system"},
+                "missing_fields": ["ro_capacity", "location", "budget", "timeline", "application"],
+                "next_action": "ask_question",
+                "response": "What capacity do you need?",
+                "should_end_call": False,
+                "lead_status": "interested",
+            }, "error": None}
+
+    llm = RecoveringLLM()
+    monkeypatch.setattr(orchestrator, "get_llm", lambda: llm)
+    await client.post(f"/api/calls/{call['id']}/agent/greeting")
+    first = await client.post(f"/api/calls/{call['id']}/agent/message", json={"message": "I need a purifier"})
+    second = await client.post(f"/api/calls/{call['id']}/agent/message", json={"message": "commercial RO system"})
+    assert first.status_code == second.status_code == 200
+    assert first.json()["agent_error"] is True
+    assert second.json()["collected"]["requirement"] == "commercial RO system"
+    assert llm.calls == 2
