@@ -90,7 +90,7 @@ def _fallback_turn(
         elif _fallback_value_is_valid(pending_field, text):
             value = text.strip()[:500]
             if pending_field == "location":
-                value = re.sub(r"^(?:add|in|at|location is|city is)\\s+", "", value, flags=re.I).strip(" .,!?:")
+                value = re.sub(r"^(?:add|in|at|location is|city is)\s+", "", value, flags=re.I).strip(" .,!?:")
             merged[pending_field] = value
         else:
             return merged, f"Sorry, I couldn't confirm that. {questions[pending_field]}", False, pending_field
