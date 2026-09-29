@@ -75,8 +75,7 @@ def _fallback_turn(
     """Continue a call without an LLM, collecting one field at a time."""
     text = (message or "").strip()
     merged = dict(collected)
-    language = str(merged.get("customer_language") or "").lower()
-    questions = _FALLBACK_QUESTIONS_HINGLISH if language in ("hindi", "hindi/hinglish", "hinglish") else _FALLBACK_QUESTIONS
+    questions = _FALLBACK_QUESTIONS
     if _DECLINE_RE.search(text) or (pending_field is None and re.fullmatch(r"(?:no|nope|nah)", text, re.I)):
         return merged, "Understood. I won't take more of your time. Have a good day.", True, None
 
@@ -163,7 +162,7 @@ async def greeting(db: AsyncSession, call: models.Call) -> str:
     product = customer.product or "water treatment"
     text = (
         f"Hello {first_name}, this is Sam calling from AgentSpeak AI on behalf of your "
-        f"service team, regarding your {product} enquiry. Kya aap Hindi/Hinglish mein baat karna comfortable feel karenge, ya would you prefer English or another language? Do you have a couple of minutes?"
+        f"service team, regarding your {product} enquiry. Do you have a couple of minutes to talk?"
     )
     await _add_message(db, call.id, "ai", text, {"event": "greeting"})
     await _get_state(db, call.id)
@@ -208,14 +207,6 @@ async def handle_turn(
         .order_by(models.ConversationMessage.sequence_number.asc())
     )
     all_messages = result.scalars().all()
-    # Capture an explicit preference from the first reply to the language question.
-    if not collected.get("customer_language"):
-        greeting_message = next((m for m in all_messages if m.speaker == "ai" and isinstance(m.metadata_json, dict) and m.metadata_json.get("event") == "greeting"), None)
-        if greeting_message:
-            preference = _detect_language_preference(message)
-            if preference:
-                collected["customer_language"] = preference
-                state.collected = collected
     recent = all_messages[-12:]
     previous_ai = next((m for m in reversed(all_messages[:-1]) if m.speaker == "ai"), None)
     previous_metadata = previous_ai.metadata_json if previous_ai and isinstance(previous_ai.metadata_json, dict) else {}
@@ -229,7 +220,7 @@ async def handle_turn(
     else:
         messages = [{"role": "system", "content": rules.build_system_prompt(
             collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems",
-            customer_language=collected.get("customer_language")
+            customer_language="English"
         )}]
         for m in recent:
             role = "assistant" if m.speaker == "ai" else "user"
