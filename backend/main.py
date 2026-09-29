@@ -55,6 +55,11 @@ async def startup() -> None:
     logger.info("Database ready. call_mode=%s llm_model=%s", settings.call_mode, settings.llm_model)
 
 
+@app.get("/", tags=["platform"])
+async def root():
+    return {"status": "ok", "app": settings.app_name, "docs": "/docs", "health": "/api/health"}
+
+
 @app.get("/api/health", tags=["platform"])
 async def health():
     llm = get_llm()
