@@ -223,7 +223,19 @@ export function useVoiceCallRest(callId: number | null) {
             break;
           }
           case "call_ended":
-            if (!endedRef.current) await endCallRest("Agent completed the call objective.");
+            if (!endedRef.current) {
+              // The server has already persisted the final status and summary.
+              // Finish locally instead of POSTing /end a second time (which returns 409).
+              endedRef.current = true;
+              speechTokenRef.current += 1;
+              clearSilenceTimer();
+              sttRef.current?.stop();
+              ttsRef.current?.cancel();
+              const activeSocket = wsRef.current;
+              wsRef.current = null;
+              try { activeSocket?.close(); } catch { /* already closed */ }
+              setPhase("ended");
+            }
             break;
           case "error":
             setError(String(frame.detail ?? "Call server error."));
