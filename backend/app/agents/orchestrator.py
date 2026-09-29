@@ -53,10 +53,20 @@ def _fallback_value_is_valid(field: str, text: str) -> bool:
     if not value or len(value) > 500 or _ACK_RE.fullmatch(value):
         return False
     if field == "ro_capacity":
-        return bool(re.search(r"\d", value)) and len(value.split()) <= 5
+        if not re.search(r"\d", value) or len(value.split()) > 6:
+            return False
+        # A capacity answer should be numeric, optionally with a recognizable
+        # unit. Reject ASR mashups such as "Oppo 500 people" for confirmation.
+        words = re.findall(r"[A-Za-z]+", value.lower())
+        allowed = {
+            "l", "litre", "litres", "liter", "liters", "ltr", "lph", "gpd",
+            "gpm", "mld", "kl", "day", "per", "hour", "hours", "hr", "hrs",
+            "capacity", "size", "people", "person", "persons",
+        }
+        return not words or all(word in allowed for word in words)
     if field == "location":
         cleaned = re.sub(r"^(?:add|in|at|location is|city is)\s+", "", value, flags=re.I).strip(" .,!?:")
-        return bool(re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,79}", cleaned)) and len(cleaned.split()) <= 5
+        return bool(re.fullmatch(r"[^\\W\\d_][^\\W\\d_ .'-]{1,79}", cleaned, flags=re.UNICODE)) and len(cleaned.split()) <= 5
     if field == "budget":
         return bool(re.fullmatch(
             r"(?i)(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*(?:\s*(?:-|to)\s*(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*)?(?:\s*(?:lakh|lakhs|lac|lacs|k|thousand|million|crore))?",
