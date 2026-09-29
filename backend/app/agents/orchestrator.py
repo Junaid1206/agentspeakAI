@@ -223,23 +223,20 @@ async def handle_turn(
     fallback_mode = bool(previous_metadata.get("fallback_mode"))
     pending_field = previous_metadata.get("pending_field") if fallback_mode else None
 
-    # 3. Use the LLM when available; after a provider failure, stay in a
-    # deterministic collection flow for this call instead of repeating errors.
-    if fallback_mode:
-        outcome = {"ok": False, "data": None, "error": "LLM fallback mode active"}
-    else:
-        messages = [{"role": "system", "content": rules.build_system_prompt(
-            collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems",
-            customer_language="English"
-        )}]
-        for m in recent:
-            role = "assistant" if m.speaker == "ai" else "user"
-            messages.append({"role": role, "content": m.message})
-        try:
-            outcome = await llm.complete_json(messages, temperature=0.2, max_tokens=400)
-        except Exception as exc:  # noqa: BLE001 — provider crashes degrade to fallback
-            logger.warning("LLM provider raised for call %s: %s", call.id, exc)
-            outcome = {"ok": False, "data": None, "error": f"provider error: {exc}"}
+    # 3. Re-attempt the provider on every turn. A previous 429/network failure
+    # must not permanently disable the LLM for the rest of the call.
+    messages = [{"role": "system", "content": rules.build_system_prompt(
+        collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems",
+        customer_language=None
+    )}]
+    for m in recent:
+        role = "assistant" if m.speaker == "ai" else "user"
+        messages.append({"role": role, "content": m.message})
+    try:
+        outcome = await llm.complete_json(messages, temperature=0.2, max_tokens=400)
+    except Exception as exc:  # noqa: BLE001 — provider crashes degrade to fallback
+        logger.warning("LLM provider raised for call %s: %s", call.id, type(exc).__name__)
+        outcome = {"ok": False, "data": None, "error": f"provider error: {type(exc).__name__}"}
 
     if outcome["ok"] and rules.coerce_decision(outcome.get("data")) is None:
         outcome = {"ok": False, "data": None, "error": "LLM decision failed validation"}
@@ -247,8 +244,8 @@ async def handle_turn(
     await log_event(
         db,
         call.id,
-        "agent_fallback_turn" if fallback_mode else ("agent_processing" if outcome["ok"] else "agent_error"),
-        "Deterministic collection mode" if fallback_mode else (f"decision via {llm.name}" if outcome["ok"] else str(outcome["error"])[:300]),
+        "agent_processing" if outcome["ok"] else "agent_error",
+        f"decision via {llm.name}" if outcome["ok"] else ("Deterministic collection mode: " + str(outcome["error"])[:250]),
     )
 
     # 4. Degrade gracefully: keep collecting requirements without looping the
@@ -297,10 +294,26 @@ async def handle_turn(
         }
 
     merged = dict(collected)
+    rejected_fields: list[str] = []
     for field in rules.AGENT_FIELD_NAMES:
         incoming = decision["extracted_data"].get(field)
-        if isinstance(incoming, str) and incoming.strip():
-            merged[field] = incoming
+        if not isinstance(incoming, str) or not incoming.strip():
+            continue
+        candidate = incoming.strip()[:500]
+        if field in _FALLBACK_FIELD_ORDER and not _fallback_value_is_valid(field, candidate):
+            rejected_fields.append(field)
+            continue
+        existing = merged.get(field)
+        if rules.is_filled(existing) and existing.casefold() != candidate.casefold():
+            rejected_fields.append(field)
+            continue
+        merged[field] = candidate
+
+    if rejected_fields:
+        field = next((f for f in _FALLBACK_FIELD_ORDER if f in rejected_fields), rejected_fields[0])
+        decision["response"] = f"I want to make sure I understood correctly. {_FALLBACK_QUESTIONS[field]}"
+        decision["should_end_call"] = False
+        decision["next_action"] = "clarify"
 
     # 6. Lead status (sticky), stage, follow-up flag.
     new_fields = rules.count_new_fields(collected, merged)
