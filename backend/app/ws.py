@@ -19,6 +19,7 @@ import logging
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from . import models
 from .agents import orchestrator
