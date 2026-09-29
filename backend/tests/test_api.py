@@ -321,3 +321,18 @@ async def test_llm_is_retried_after_fallback_turn(client, call, monkeypatch):
     assert first.json()["agent_error"] is True
     assert second.json()["collected"]["requirement"] == "commercial RO system"
     assert llm.calls == 2
+
+async def test_fallback_rejects_garbled_capacity_and_suggestion_as_requirement():
+    from app.agents.orchestrator import _fallback_turn
+
+    collected, response, should_end, pending = _fallback_turn("Oppo 500 people", {}, "ro_capacity")
+    assert collected == {}
+    assert should_end is False
+    assert pending == "ro_capacity"
+    assert "capacity" in response.lower()
+
+    collected, response, should_end, pending = _fallback_turn("Can you suggest me?", {}, "requirement")
+    assert collected == {}
+    assert should_end is False
+    assert pending == "requirement"
+    assert "product or service" in response.lower()
