@@ -32,7 +32,7 @@ router = APIRouter()
 async def _load_call(call_id: int) -> models.Call | None:
     async with SessionLocal() as db:
         result = await db.execute(
-            select(models.Call).where(models.Call.id == call_id)
+            select(models.Call).options(selectinload(models.Call.customer)).where(models.Call.id == call_id)
         )
         call = result.scalar_one_or_none()
         if call is not None:
@@ -71,7 +71,7 @@ async def call_socket(websocket: WebSocket, call_id: int):
                 try:
                     async with SessionLocal() as db:
                         result_db = await db.execute(
-                            select(models.Call).where(models.Call.id == call_id)
+                            select(models.Call).options(selectinload(models.Call.customer)).where(models.Call.id == call_id)
                         )
                         call = result_db.scalar_one_or_none()
 
@@ -96,7 +96,7 @@ async def call_socket(websocket: WebSocket, call_id: int):
                     if result["should_end_call"]:
                         async with SessionLocal() as db:
                             result_db = await db.execute(
-                                select(models.Call).where(models.Call.id == call_id)
+                                select(models.Call).options(selectinload(models.Call.customer)).where(models.Call.id == call_id)
                             )
                             call = result_db.scalar_one_or_none()
 
