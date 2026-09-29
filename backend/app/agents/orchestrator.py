@@ -8,6 +8,7 @@ Per customer turn:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy.orm import selectinload
@@ -20,6 +21,63 @@ from . import rules
 from .llm import LLMProvider, get_llm
 
 logger = logging.getLogger("agentspeak.agent")
+
+_FALLBACK_FIELD_ORDER = [
+    "requirement", "ro_capacity", "location", "budget", "timeline", "application"
+]
+_FALLBACK_QUESTIONS = {
+    "requirement": "What product or service are you enquiring about?",
+    "ro_capacity": "What capacity or size do you need?",
+    "location": "Which city or location will this be used in?",
+    "budget": "Do you have an approximate budget in mind?",
+    "timeline": "When are you hoping to get this?",
+    "application": "What will you use it for?",
+}
+_ACK_RE = re.compile(
+    r"^(?:(?:yes|yeah|yep|yup|ok|okay|sure|right|hello|hi|listen)"
+    r"(?:\\s+(?:i am|i'm)\\s+here)?(?:\\s+listen)?|"
+    r"i am here(?:\\s+listen)?|i'm here(?:\\s+listen)?|i have|"
+    r"what(?:'s| is) (?:the )?(?:problem|issue))[.!?,\\s]*$",
+    re.I,
+)
+_DECLINE_RE = re.compile(
+    r"\\b(?:not interested|no thanks|no thank you|stop calling|remove me|"
+    r"do not call|don't call|not looking)\\b",
+    re.I,
+)
+
+
+def _fallback_turn(
+    message: str, collected: dict, pending_field: str | None
+) -> tuple[dict, str, bool, str | None]:
+    """Continue a call without an LLM, collecting one field at a time."""
+    text = (message or "").strip()
+    merged = dict(collected)
+    if _DECLINE_RE.search(text) or (pending_field is None and re.fullmatch(r"(?:no|nope|nah)", text, re.I)):
+        return merged, "Understood. I won't take more of your time. Have a good day.", True, None
+
+    if pending_field in _FALLBACK_FIELD_ORDER and text and not _ACK_RE.fullmatch(text):
+        if re.fullmatch(r"(?:no|nope|nah|not sure|i don't know|dont know|not decided)", text, re.I):
+            merged[pending_field] = "Not specified"
+        else:
+            merged[pending_field] = text[:500]
+
+    next_field = next((field for field in _FALLBACK_FIELD_ORDER if not rules.is_filled(merged.get(field))), None)
+    if next_field:
+        return merged, _FALLBACK_QUESTIONS[next_field], False, next_field
+
+    recap = "; ".join(
+        f"{label}: {merged[field]}"
+        for field, label in (
+            ("requirement", "requirement"), ("ro_capacity", "capacity"),
+            ("location", "location"), ("budget", "budget"),
+            ("timeline", "timeline"), ("application", "use case"),
+        )
+        if rules.is_filled(merged.get(field))
+    )
+    response = f"Thanks, I have noted {recap}. I'll close this demo now." if recap else "I'm having a technical issue, so I'll close this demo for now. Please try again later."
+    return merged, response, True, None
+
 
 
 async def _next_sequence(db: AsyncSession, call_id: int) -> int:
@@ -128,36 +186,60 @@ async def handle_turn(
     )
     all_messages = result.scalars().all()
     recent = all_messages[-12:]
+    previous_ai = next((m for m in reversed(all_messages[:-1]) if m.speaker == "ai"), None)
+    previous_metadata = previous_ai.metadata_json if previous_ai and isinstance(previous_ai.metadata_json, dict) else {}
+    fallback_mode = bool(previous_metadata.get("fallback_mode"))
+    pending_field = previous_metadata.get("pending_field") if fallback_mode else None
 
-    # 3. Structured LLM decision.
-    messages = [{"role": "system", "content": rules.build_system_prompt(
-        collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems"
-    )}]
-    for m in recent:
-        role = "assistant" if m.speaker == "ai" else "user"
-        messages.append({"role": role, "content": m.message})
+    # 3. Use the LLM when available; after a provider failure, stay in a
+    # deterministic collection flow for this call instead of repeating errors.
+    if fallback_mode:
+        outcome = {"ok": False, "data": None, "error": "LLM fallback mode active"}
+    else:
+        messages = [{"role": "system", "content": rules.build_system_prompt(
+            collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems"
+        )}]
+        for m in recent:
+            role = "assistant" if m.speaker == "ai" else "user"
+            messages.append({"role": role, "content": m.message})
+        try:
+            outcome = await llm.complete_json(messages, temperature=0.2, max_tokens=400)
+        except Exception as exc:  # noqa: BLE001 — provider crashes degrade to fallback
+            logger.warning("LLM provider raised for call %s: %s", call.id, exc)
+            outcome = {"ok": False, "data": None, "error": f"provider error: {exc}"}
 
-    try:
-        outcome = await llm.complete_json(messages, temperature=0.2, max_tokens=400)
-    except Exception as exc:  # noqa: BLE001 — provider crashes degrade to fallback
-        logger.warning("LLM provider raised for call %s: %s", call.id, exc)
-        outcome = {"ok": False, "data": None, "error": f"provider error: {exc}"}
     await log_event(
         db,
         call.id,
-        "agent_processing" if outcome["ok"] else "agent_error",
-        f"decision via {llm.name}" if outcome["ok"] else str(outcome["error"])[:300],
+        "agent_fallback_turn" if fallback_mode else ("agent_processing" if outcome["ok"] else "agent_error"),
+        "Deterministic collection mode" if fallback_mode else (f"decision via {llm.name}" if outcome["ok"] else str(outcome["error"])[:300]),
     )
 
-    # 4. Graceful fallback on LLM failure — the call can continue.
+    # 4. Degrade gracefully: keep collecting requirements without looping the
+    # same "please repeat" message when the LLM quota/provider is unavailable.
     if not outcome["ok"]:
-        fallback = "Sorry, I didn't catch that clearly. Could you please repeat that?"
-        await _add_message(db, call.id, "ai", fallback, {"event": "agent_error_fallback"})
+        merged, fallback, should_end, fallback_field = _fallback_turn(message, collected, pending_field)
+        state.collected = merged
+        state.missing_fields = rules.missing_fields(merged)
+        state.stage = rules.stage_for(merged, stage)
+        state.turn_count += 1
+        state.updated_at = datetime.now(timezone.utc)
+        call.lead_status = "not_interested" if should_end and _DECLINE_RE.search(message or "") else (
+            "interested" if any(rules.is_filled(merged.get(f)) for f in _FALLBACK_FIELD_ORDER) else call.lead_status
+        )
+        call.silence_strike_count = 0
+        call.follow_up_required = bool(should_end and rules.missing_fields(merged))
+        await _add_message(db, call.id, "ai", fallback, {
+            "event": "agent_error_fallback", "fallback_mode": True, "pending_field": fallback_field
+        })
         await db.commit()
         return {
             "response": fallback,
-            "should_end_call": False,
+            "should_end_call": should_end,
             "lead_status": call.lead_status,
+            "collected": merged,
+            "missing_fields": rules.missing_fields(merged),
+            "stage": state.stage,
             "agent_error": True,
         }
 
