@@ -53,18 +53,18 @@ def _fallback_value_is_valid(field: str, text: str) -> bool:
     if not value or len(value) > 500 or _ACK_RE.fullmatch(value):
         return False
     if field == "ro_capacity":
-        return bool(re.search(r"\\d", value)) and len(value.split()) <= 5
+        return bool(re.search(r"\d", value)) and len(value.split()) <= 5
     if field == "location":
-        cleaned = re.sub(r"^(?:add|in|at|location is|city is)\\s+", "", value, flags=re.I).strip(" .,!?:")
+        cleaned = re.sub(r"^(?:add|in|at|location is|city is)\s+", "", value, flags=re.I).strip(" .,!?:")
         return bool(re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,79}", cleaned)) and len(cleaned.split()) <= 5
     if field == "budget":
         return bool(re.fullmatch(
-            r"(?i)(?:(?:₹|rs\\.?|inr|usd|\\$)\\s*)?\\d[\\d,]*(?:\\s*(?:-|to)\\s*(?:(?:₹|rs\\.?|inr|usd|\\$)\\s*)?\\d[\\d,]*)?(?:\\s*(?:lakh|lakhs| lac|lacs|k|thousand|million|crore))?",
+            r"(?i)(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*(?:\s*(?:-|to)\s*(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*)?(?:\s*(?:lakh|lakhs|lac|lacs|k|thousand|million|crore))?",
             value,
         ))
     if field == "timeline":
         return bool(re.search(
-            r"(?i)\\b(today|tomorrow|this week|next week|this month|next month|within|in \\d+|\\d+\\s*(?:day|days|week|weeks|month|months))\\b",
+            r"(?i)\b(today|tomorrow|this week|next week|this month|next month|within|in \d+|\d+\s*(?:day|days|week|weeks|month|months))\b",
             value,
         ))
     if field == "requirement":
