@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     # --- Core -----------------------------------------------------------------
     app_name: str = "AgentSpeak AI"
     database_url: str = "postgresql+asyncpg://agentspeak:agentspeak@localhost:5432/agentspeak"
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://agentspeakai-frontend.onrender.com"
 
     # --- AI / LLM -------------------------------------------------------------
     llm_provider: str = "openai-compatible"
