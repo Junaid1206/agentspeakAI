@@ -384,26 +384,31 @@ async def generate_summary(db: AsyncSession, call: models.Call, llm: LLMProvider
     if fallback_mode:
         outcome = {"ok": False, "data": None, "error": "LLM fallback mode active"}
     else:
-        outcome = await llm.complete_json(
-            [
-                {
-                    "role": "system",
-                    "content": (
-                        'You are an analyst summarizing an AI sales call. Respond with STRICT JSON '
-                        'only. Schema: {"summary": string (2-3 sentences), "customer_intent": string, '
-                        '"key_requirements": string[], "budget": string|null, "timeline": string|null, '
-                        '"location": string|null, "application": string|null, "lead_status": '
-                        '"new"|"interested"|"qualified"|"not_interested"|"follow_up", '
-                        '"follow_up_required": boolean, "outcome": "interested"|"not_interested"|'
-                        '"follow_up_required"|"information_collected"|"customer_unavailable"|'
-                        '"customer_declined"|"technical_failure"|"completed"|"failed"}'
-                    ),
-                },
-                {"role": "user", "content": f"Agent state at end of call: {state_lines}\n\nCALL TRANSCRIPT:\n{dialogue}"},
-            ],
-            temperature=0.1,
-            max_tokens=500,
-        )
+        try:
+            outcome = await llm.complete_json(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            'You are an analyst summarizing an AI sales call. Respond with STRICT JSON '
+                            'only. Schema: {"summary": string (2-3 sentences), "customer_intent": string, '
+                            '"key_requirements": string[], "budget": string|null, "timeline": string|null, '
+                            '"location": string|null, "application": string|null, "lead_status": '
+                            '"new"|"interested"|"qualified"|"not_interested"|"follow_up", '
+                            '"follow_up_required": boolean, "outcome": "interested"|"not_interested"|'
+                            '"follow_up_required"|"information_collected"|"customer_unavailable"|'
+                            '"customer_declined"|"technical_failure"|"completed"|"failed"}'
+                        ),
+                    },
+                    {"role": "user", "content": f"Agent state at end of call: {state_lines}\n\nCALL TRANSCRIPT:\n{dialogue}"},
+                ],
+                temperature=0.1,
+                max_tokens=500,
+            )
+        except Exception as exc:  # noqa: BLE001 — summaries must survive provider failures
+            logger.warning("summary LLM failed for call %s: %s", call.id, exc)
+            outcome = {"ok": False, "data": None, "error": str(exc)}
+    fallback_mode = fallback_mode or not outcome.get("ok", False)
 
     lead_options = rules.LEAD_STATUSES
     outcome_options = [
