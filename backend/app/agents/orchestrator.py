@@ -33,6 +33,28 @@ _FALLBACK_QUESTIONS = {
     "timeline": "When are you hoping to get this?",
     "application": "What will you use it for?",
 }
+_FALLBACK_QUESTIONS_HINGLISH = {
+    "requirement": "Aap kis product ya service ke baare mein enquiry kar rahe hain?",
+    "ro_capacity": "Aapko kitni capacity ya size chahiye?",
+    "location": "Ye kis city ya location mein use hoga?",
+    "budget": "Aapka approximate budget kya hai?",
+    "timeline": "Aapko ye kab tak chahiye?",
+    "application": "Aap ise kis purpose ke liye use karenge?",
+}
+
+
+def _detect_language_preference(message: str) -> str | None:
+    text = (message or "").strip().lower()
+    if any(token in text for token in ("hinglish", "mix hindi", "hindi english", "both")):
+        return "Hinglish"
+    if any(token in text for token in ("english", "in english", "speak english")):
+        return "English"
+    if any(token in text for token in ("hindi", "हिंदी", "हिन्दी", "हिंग्लिश")):
+        return "Hindi/Hinglish"
+    if re.search(r"[\u0900-\u097f]", text):
+        return "Hindi/Hinglish"
+    return None
+
 _ACK_RE = re.compile(
     r"^(?:(?:yes|yeah|yep|yup|ok|okay|sure|right|hello|hi|listen)"
     r"(?:\s+(?:i am|i'm)\s+here)?(?:\s+listen)?|"
@@ -53,6 +75,8 @@ def _fallback_turn(
     """Continue a call without an LLM, collecting one field at a time."""
     text = (message or "").strip()
     merged = dict(collected)
+    language = str(merged.get("customer_language") or "").lower()
+    questions = _FALLBACK_QUESTIONS_HINGLISH if language in ("hindi", "hindi/hinglish", "hinglish") else _FALLBACK_QUESTIONS
     if _DECLINE_RE.search(text) or (pending_field is None and re.fullmatch(r"(?:no|nope|nah)", text, re.I)):
         return merged, "Understood. I won't take more of your time. Have a good day.", True, None
 
@@ -64,7 +88,7 @@ def _fallback_turn(
 
     next_field = next((field for field in _FALLBACK_FIELD_ORDER if not rules.is_filled(merged.get(field))), None)
     if next_field:
-        return merged, _FALLBACK_QUESTIONS[next_field], False, next_field
+        return merged, questions[next_field], False, next_field
 
     recap = "; ".join(
         f"{label}: {merged[field]}"
@@ -139,7 +163,7 @@ async def greeting(db: AsyncSession, call: models.Call) -> str:
     product = customer.product or "water treatment"
     text = (
         f"Hello {first_name}, this is Sam calling from AgentSpeak AI on behalf of your "
-        f"service team, regarding your {product} enquiry. Do you have a couple of minutes?"
+        f"service team, regarding your {product} enquiry. Kya aap Hindi/Hinglish mein baat karna comfortable feel karenge, ya would you prefer English or another language? Do you have a couple of minutes?"
     )
     await _add_message(db, call.id, "ai", text, {"event": "greeting"})
     await _get_state(db, call.id)
@@ -178,6 +202,14 @@ async def handle_turn(
     state = await _get_state(db, call.id)
     collected = dict(state.collected or {})
     stage = state.stage or "greeting"
+    # Capture an explicit preference from the first reply to the language question.
+    if not collected.get("customer_language"):
+        greeting_message = next((m for m in all_messages if m.speaker == "ai" and isinstance(m.metadata_json, dict) and m.metadata_json.get("event") == "greeting"), None)
+        if greeting_message:
+            preference = _detect_language_preference(message)
+            if preference:
+                collected["customer_language"] = preference
+                state.collected = collected
 
     result = await db.execute(
         select(models.ConversationMessage)
@@ -197,7 +229,8 @@ async def handle_turn(
         outcome = {"ok": False, "data": None, "error": "LLM fallback mode active"}
     else:
         messages = [{"role": "system", "content": rules.build_system_prompt(
-            collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems"
+            collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems",
+            customer_language=collected.get("customer_language")
         )}]
         for m in recent:
             role = "assistant" if m.speaker == "ai" else "user"
