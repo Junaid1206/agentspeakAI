@@ -371,26 +371,33 @@ async def generate_summary(db: AsyncSession, call: models.Call, llm: LLMProvider
         f"{'AI' if m.speaker == 'ai' else m.speaker.upper()}: {m.message}" for m in messages
     )[-6000:]
 
-    outcome = await llm.complete_json(
-        [
-            {
-                "role": "system",
-                "content": (
-                    'You are an analyst summarizing an AI sales call. Respond with STRICT JSON '
-                    'only. Schema: {"summary": string (2-3 sentences), "customer_intent": string, '
-                    '"key_requirements": string[], "budget": string|null, "timeline": string|null, '
-                    '"location": string|null, "application": string|null, "lead_status": '
-                    '"new"|"interested"|"qualified"|"not_interested"|"follow_up", '
-                    '"follow_up_required": boolean, "outcome": "interested"|"not_interested"|'
-                    '"follow_up_required"|"information_collected"|"customer_unavailable"|'
-                    '"customer_declined"|"technical_failure"|"completed"|"failed"}'
-                ),
-            },
-            {"role": "user", "content": f"Agent state at end of call: {state_lines}\n\nCALL TRANSCRIPT:\n{dialogue}"},
-        ],
-        temperature=0.1,
-        max_tokens=500,
+    fallback_mode = any(
+        m.speaker == "ai" and isinstance(m.metadata_json, dict) and m.metadata_json.get("fallback_mode")
+        for m in messages
     )
+    if fallback_mode:
+        outcome = {"ok": False, "data": None, "error": "LLM fallback mode active"}
+    else:
+        outcome = await llm.complete_json(
+            [
+                {
+                    "role": "system",
+                    "content": (
+                        'You are an analyst summarizing an AI sales call. Respond with STRICT JSON '
+                        'only. Schema: {"summary": string (2-3 sentences), "customer_intent": string, '
+                        '"key_requirements": string[], "budget": string|null, "timeline": string|null, '
+                        '"location": string|null, "application": string|null, "lead_status": '
+                        '"new"|"interested"|"qualified"|"not_interested"|"follow_up", '
+                        '"follow_up_required": boolean, "outcome": "interested"|"not_interested"|'
+                        '"follow_up_required"|"information_collected"|"customer_unavailable"|'
+                        '"customer_declined"|"technical_failure"|"completed"|"failed"}'
+                    ),
+                },
+                {"role": "user", "content": f"Agent state at end of call: {state_lines}\n\nCALL TRANSCRIPT:\n{dialogue}"},
+            ],
+            temperature=0.1,
+            max_tokens=500,
+        )
 
     lead_options = rules.LEAD_STATUSES
     outcome_options = [
@@ -413,6 +420,24 @@ async def generate_summary(db: AsyncSession, call: models.Call, llm: LLMProvider
         "follow_up_required": call.follow_up_required,
         "outcome": call.outcome,
     }
+
+    if fallback_mode:
+        captured = {field: (state.collected or {}).get(field) for field in _FALLBACK_FIELD_ORDER if state and rules.is_filled((state.collected or {}).get(field))}
+        payload["customer_intent"] = str(captured.get("requirement") or "unknown")
+        payload["key_requirements"] = [f"{field}: {value}" for field, value in captured.items()]
+        payload["budget"] = captured.get("budget")
+        payload["timeline"] = captured.get("timeline")
+        payload["location"] = captured.get("location")
+        payload["application"] = captured.get("application")
+        payload["follow_up_required"] = bool(rules.missing_fields(state.collected or {})) if state else True
+        if call.lead_status == "not_interested":
+            payload["outcome"] = "customer_declined"
+        elif captured:
+            payload["outcome"] = "information_collected"
+        else:
+            payload["outcome"] = "technical_failure"
+        details = "; ".join(f"{field}: {value}" for field, value in captured.items())
+        payload["summary"] = f"Call with {call.customer.name}. The LLM quota was unavailable, so deterministic collection mode was used. Captured details: {details or 'none'}."
 
     if outcome["ok"] and isinstance(outcome["data"], dict):
         d = outcome["data"]
