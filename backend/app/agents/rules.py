@@ -222,7 +222,7 @@ def build_system_prompt(
     else:
         stage_hint = "Continue discovery/qualifying for the missing details."
 
-    fields_schema = ", ".join(f"{f}: string|null" for f in AGENT_FIELD_NAMES)
+    fields_schema = json.dumps({field: None for field in AGENT_FIELD_NAMES}, ensure_ascii=False)
     return "\n".join(
         [
             "You are Sam, the professional outbound AI calling agent for AgentSpeak AI. "
@@ -252,10 +252,10 @@ def build_system_prompt(
             "- extracted_data should include fields learnable from the WHOLE conversation (null when unknown).",
             "",
             "Respond with STRICT JSON only, no prose:",
-            '{"extracted_data": {'
+            '{"extracted_data": '
             + fields_schema
-            + '}, "missing_fields": string[], "next_action": "ask_question"|"clarify"|"confirm_details"|"close_call", '
-            '"response": "what you say aloud", "should_end_call": boolean, '
-            '"lead_status": "new"|"interested"|"qualified"|"not_interested"|"follow_up"}',
+            + ', "missing_fields": [], "next_action": "ask_question", '
+            '"response": "A short spoken response.", "should_end_call": false, '
+            '"lead_status": "new"}',
         ]
     )
