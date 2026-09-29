@@ -73,7 +73,7 @@ function buildMessages(
     `- extracted_data should include fields learnable from the WHOLE conversation (null when unknown).`,
     ``,
     `Respond with STRICT JSON only, no prose:`,
-    `{"extracted_data": {${AGENT_FIELD_NAMES.join(": string|null, ")}}: string|null}, "missing_fields": string[], "next_action": "ask_question"|"clarify"|"confirm_details"|"close_call", "response": "what you say aloud", "should_end_call": boolean, "lead_status": "new"|"interested"|"qualified"|"not_interested"|"follow_up"}`,
+    `Return this JSON object shape (all extracted_data values are strings or null): {"extracted_data":{"customer_name":null,"company_name":null,"requirement":null,"ro_capacity":null,"location":null,"budget":null,"timeline":null,"application":null,"additional_requirements":null},"missing_fields":[],"next_action":"ask_question","response":"A short spoken response.","should_end_call":false,"lead_status":"new"}`,
   ].join("\n");
 
   const history = recent.map((m) => ({
