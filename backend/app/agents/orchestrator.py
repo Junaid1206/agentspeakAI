@@ -47,10 +47,37 @@ _DECLINE_RE = re.compile(
 )
 
 
+def _fallback_value_is_valid(field: str, text: str) -> bool:
+    """Reject obvious mismatches in fallback mode; never pretend free text is verified."""
+    value = (text or "").strip()
+    if not value or len(value) > 500 or _ACK_RE.fullmatch(value):
+        return False
+    if field == "ro_capacity":
+        return bool(re.search(r"\\d", value)) and len(value.split()) <= 5
+    if field == "location":
+        cleaned = re.sub(r"^(?:add|in|at|location is|city is)\\s+", "", value, flags=re.I).strip(" .,!?:")
+        return bool(re.fullmatch(r"[A-Za-z][A-Za-z .'-]{1,79}", cleaned)) and len(cleaned.split()) <= 5
+    if field == "budget":
+        return bool(re.fullmatch(
+            r"(?i)(?:(?:₹|rs\\.?|inr|usd|\\$)\\s*)?\\d[\\d,]*(?:\\s*(?:-|to)\\s*(?:(?:₹|rs\\.?|inr|usd|\\$)\\s*)?\\d[\\d,]*)?(?:\\s*(?:lakh|lakhs| lac|lacs|k|thousand|million|crore))?",
+            value,
+        ))
+    if field == "timeline":
+        return bool(re.search(
+            r"(?i)\\b(today|tomorrow|this week|next week|this month|next month|within|in \\d+|\\d+\\s*(?:day|days|week|weeks|month|months))\\b",
+            value,
+        ))
+    if field == "requirement":
+        return len(value.split()) >= 2 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|something|anything)", value))
+    if field == "application":
+        return len(value.split()) >= 1 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|at home)", value))
+    return True
+
+
 def _fallback_turn(
     message: str, collected: dict, pending_field: str | None
 ) -> tuple[dict, str, bool, str | None]:
-    """Continue a call without an LLM, collecting one field at a time."""
+    """Continue a call without an LLM, validating each answer before saving it."""
     text = (message or "").strip()
     merged = dict(collected)
     questions = _FALLBACK_QUESTIONS
@@ -60,8 +87,13 @@ def _fallback_turn(
     if pending_field in _FALLBACK_FIELD_ORDER and text and not _ACK_RE.fullmatch(text):
         if re.fullmatch(r"(?:no|nope|nah|not sure|i don't know|dont know|not decided)", text, re.I):
             merged[pending_field] = "Not specified"
+        elif _fallback_value_is_valid(pending_field, text):
+            value = text.strip()[:500]
+            if pending_field == "location":
+                value = re.sub(r"^(?:add|in|at|location is|city is)\\s+", "", value, flags=re.I).strip(" .,!?:")
+            merged[pending_field] = value
         else:
-            merged[pending_field] = text[:500]
+            return merged, f"Sorry, I couldn't confirm that. {questions[pending_field]}", False, pending_field
 
     next_field = next((field for field in _FALLBACK_FIELD_ORDER if not rules.is_filled(merged.get(field))), None)
     if next_field:
