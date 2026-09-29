@@ -68,16 +68,36 @@ class OpenAICompatibleProvider:
             "response_format": {"type": "json_object"},
         }
         try:
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {self.api_key}"},
-                    json=payload,
-                )
-            if resp.status_code != 200:
-                detail = resp.text[:300]
-                logger.warning("LLM error %s: %s", resp.status_code, detail)
-                return {"ok": False, "data": None, "error": f"LLM HTTP {resp.status_code}"}
+            # Retry only transient upstream failures. Quota/authentication errors
+            # are returned immediately so a call does not waste its latency budget.
+            import asyncio
+
+            async with httpx.AsyncClient(timeout=20) as client:
+                resp = None
+                for attempt in range(2):
+                    try:
+                        resp = await client.post(
+                            f"{self.base_url}/chat/completions",
+                            headers={"Authorization": f"Bearer {self.api_key}"},
+                            json=payload,
+                        )
+                    except (httpx.TimeoutException, httpx.NetworkError) as exc:
+                        if attempt == 0:
+                            logger.warning("Transient LLM transport error; retrying once: %s", type(exc).__name__)
+                            await asyncio.sleep(0.4)
+                            continue
+                        raise
+                    if resp.status_code in (502, 503, 504, 408) and attempt == 0:
+                        logger.warning("Transient LLM HTTP %s; retrying once", resp.status_code)
+                        await asyncio.sleep(0.4)
+                        continue
+                    break
+
+            if resp is None or resp.status_code != 200:
+                status = resp.status_code if resp is not None else "unknown"
+                detail = resp.text[:300] if resp is not None else "No response"
+                logger.warning("LLM error %s: %s", status, detail)
+                return {"ok": False, "data": None, "error": f"LLM HTTP {status}"}
 
             content = resp.json()["choices"][0]["message"]["content"] or ""
             parsed = _extract_json(content)
@@ -86,7 +106,7 @@ class OpenAICompatibleProvider:
             return {"ok": True, "data": parsed, "error": None}
         except httpx.HTTPError as exc:
             logger.warning("LLM request failed: %s", exc)
-            return {"ok": False, "data": None, "error": f"LLM request failed: {exc}"}
+            return {"ok": False, "data": None, "error": f"LLM request failed: {type(exc).__name__}"}
 
     async def health_check(self) -> dict:
         if not self.api_key:
