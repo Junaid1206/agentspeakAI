@@ -33,28 +33,6 @@ _FALLBACK_QUESTIONS = {
     "timeline": "When are you hoping to get this?",
     "application": "What will you use it for?",
 }
-_FALLBACK_QUESTIONS_HINGLISH = {
-    "requirement": "Aap kis product ya service ke baare mein enquiry kar rahe hain?",
-    "ro_capacity": "Aapko kitni capacity ya size chahiye?",
-    "location": "Ye kis city ya location mein use hoga?",
-    "budget": "Aapka approximate budget kya hai?",
-    "timeline": "Aapko ye kab tak chahiye?",
-    "application": "Aap ise kis purpose ke liye use karenge?",
-}
-
-
-def _detect_language_preference(message: str) -> str | None:
-    text = (message or "").strip().lower()
-    if any(token in text for token in ("hinglish", "mix hindi", "hindi english", "both")):
-        return "Hinglish"
-    if any(token in text for token in ("english", "in english", "speak english")):
-        return "English"
-    if any(token in text for token in ("hindi", "हिंदी", "हिन्दी", "हिंग्लिश")):
-        return "Hindi/Hinglish"
-    if re.search(r"[\u0900-\u097f]", text):
-        return "Hindi/Hinglish"
-    return None
-
 _ACK_RE = re.compile(
     r"^(?:(?:yes|yeah|yep|yup|ok|okay|sure|right|hello|hi|listen)"
     r"(?:\s+(?:i am|i'm)\s+here)?(?:\s+listen)?|"
