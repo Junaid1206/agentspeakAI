@@ -202,6 +202,12 @@ async def handle_turn(
     state = await _get_state(db, call.id)
     collected = dict(state.collected or {})
     stage = state.stage or "greeting"
+    result = await db.execute(
+        select(models.ConversationMessage)
+        .where(models.ConversationMessage.call_id == call.id)
+        .order_by(models.ConversationMessage.sequence_number.asc())
+    )
+    all_messages = result.scalars().all()
     # Capture an explicit preference from the first reply to the language question.
     if not collected.get("customer_language"):
         greeting_message = next((m for m in all_messages if m.speaker == "ai" and isinstance(m.metadata_json, dict) and m.metadata_json.get("event") == "greeting"), None)
@@ -210,13 +216,6 @@ async def handle_turn(
             if preference:
                 collected["customer_language"] = preference
                 state.collected = collected
-
-    result = await db.execute(
-        select(models.ConversationMessage)
-        .where(models.ConversationMessage.call_id == call.id)
-        .order_by(models.ConversationMessage.sequence_number.asc())
-    )
-    all_messages = result.scalars().all()
     recent = all_messages[-12:]
     previous_ai = next((m for m in reversed(all_messages[:-1]) if m.speaker == "ai"), None)
     previous_metadata = previous_ai.metadata_json if previous_ai and isinstance(previous_ai.metadata_json, dict) else {}
