@@ -84,6 +84,25 @@ def _fallback_turn(
     if _DECLINE_RE.search(text) or (pending_field is None and re.fullmatch(r"(?:no|nope|nah)", text, re.I)):
         return merged, "Understood. I won't take more of your time. Have a good day.", True, None
 
+    asks_for_options = bool(re.search(
+        r"(?i)\b(?:suggest|recommend|options?|choices?|which one|what do you suggest|give me)\b",
+        text,
+    ))
+    if pending_field in _FALLBACK_FIELD_ORDER and asks_for_options:
+        if pending_field == "ro_capacity":
+            prompt = "I can help narrow that down. What capacity or size are you considering?"
+        elif pending_field == "budget":
+            prompt = "I can help compare options. What budget range should I consider?"
+        elif pending_field == "location":
+            prompt = "Which city or location should I use to narrow the options?"
+        elif pending_field == "timeline":
+            prompt = "What is your preferred timeframe?"
+        elif pending_field == "application":
+            prompt = "What will you mainly use it for?"
+        else:
+            prompt = "I can help narrow that down. Which product or service are you interested in?"
+        return merged, prompt, False, pending_field
+
     if pending_field in _FALLBACK_FIELD_ORDER and text and not _ACK_RE.fullmatch(text):
         if re.fullmatch(r"(?:no|nope|nah|not sure|i don't know|dont know|not decided)", text, re.I):
             merged[pending_field] = "Not specified"
