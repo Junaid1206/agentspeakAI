@@ -35,14 +35,14 @@ _FALLBACK_QUESTIONS = {
 }
 _ACK_RE = re.compile(
     r"^(?:(?:yes|yeah|yep|yup|ok|okay|sure|right|hello|hi|listen)"
-    r"(?:\\s+(?:i am|i'm)\\s+here)?(?:\\s+listen)?|"
-    r"i am here(?:\\s+listen)?|i'm here(?:\\s+listen)?|i have|"
-    r"what(?:'s| is) (?:the )?(?:problem|issue))[.!?,\\s]*$",
+    r"(?:\s+(?:i am|i'm)\s+here)?(?:\s+listen)?|"
+    r"i am here(?:\s+listen)?|i'm here(?:\s+listen)?|i have|"
+    r"what(?:'s| is) (?:the )?(?:problem|issue))[.!?,\s]*$",
     re.I,
 )
 _DECLINE_RE = re.compile(
-    r"\\b(?:not interested|no thanks|no thank you|stop calling|remove me|"
-    r"do not call|don't call|not looking)\\b",
+    r"\b(?:not interested|no thanks|no thank you|stop calling|remove me|"
+    r"do not call|don't call|not looking)\b",
     re.I,
 )
 
@@ -221,7 +221,7 @@ async def handle_turn(
         merged, fallback, should_end, fallback_field = _fallback_turn(message, collected, pending_field)
         state.collected = merged
         state.missing_fields = rules.missing_fields(merged)
-        state.stage = rules.stage_for(merged, stage)
+        state.stage = "discovery" if fallback_field else rules.stage_for(merged, stage)
         state.turn_count += 1
         state.updated_at = datetime.now(timezone.utc)
         call.lead_status = "not_interested" if should_end and _DECLINE_RE.search(message or "") else (
