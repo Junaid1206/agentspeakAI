@@ -55,7 +55,7 @@ export default function Home() {
   }
   async function startCall(id: number) {
     setBusy(true); setError(""); setNotice("");
-    try { const call = await request("/api/calls", { method: "POST", body: JSON.stringify({ customer_id: id, mode: "browser" }) }); setNotice(`Browser demo call #${call.id} created. Open the call console to start voice interaction.`); setSelected(call.id); await refresh(); }
+    try { const call = await request("/api/calls", { method: "POST", body: JSON.stringify({ customer_id: id, mode: "browser" }) }); setNotice(`Browser demo call #${call.id} created. Open the call console to start voice interaction.`); setSelected(call.id); await refresh(); window.location.assign(`/call/${call.id}`); }
     catch (e) { setError(e instanceof Error ? e.message : "Could not start call."); } finally { setBusy(false); }
   }
 
