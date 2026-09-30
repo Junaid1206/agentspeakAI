@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4o-mini"
+    llm_timeout_seconds: float = 8.0
 
     # --- Calling --------------------------------------------------------------
     call_mode: str = "browser"  # browser | telephony
