@@ -201,6 +201,21 @@ async def get_state(db: AsyncSession, call_id: int) -> models.AgentState:
 
 async def greeting(db: AsyncSession, call: models.Call) -> str:
     """Open the call: connected status + AI greeting message + initial state row."""
+    # Reconnects and client retries must not duplicate the opening line.
+    existing = await db.execute(
+        select(models.ConversationMessage)
+        .where(models.ConversationMessage.call_id == call.id)
+        .order_by(models.ConversationMessage.sequence_number.asc())
+    )
+    prior_greeting = next((
+        item for item in existing.scalars().all()
+        if item.speaker == "ai"
+        and isinstance(item.metadata_json, dict)
+        and item.metadata_json.get("event") == "greeting"
+    ), None)
+    if prior_greeting is not None:
+        return prior_greeting.message
+
     customer = call.customer
     first_name = (customer.name or "").split(" ")[0] or customer.name
     product = customer.product or "water treatment"
