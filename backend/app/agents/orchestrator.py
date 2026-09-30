@@ -66,7 +66,7 @@ def _fallback_value_is_valid(field: str, text: str) -> bool:
         return not words or all(word in allowed for word in words)
     if field == "location":
         cleaned = re.sub(r"^(?:add|in|at|location is|city is)\s+", "", value, flags=re.I).strip(" .,!?:")
-        return bool(re.fullmatch(r"[^\\W\\d_][^\\W\\d_ .'-]{1,79}", cleaned, flags=re.UNICODE)) and len(cleaned.split()) <= 5
+        return bool(re.fullmatch(r"[^\W\d_][^\W\d_ .'-]{1,79}", cleaned, flags=re.UNICODE)) and len(cleaned.split()) <= 5
     if field == "budget":
         return bool(re.fullmatch(
             r"(?i)(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*(?:\s*(?:-|to)\s*(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*)?(?:\s*(?:lakh|lakhs|lac|lacs|k|thousand|million|crore))?",
@@ -81,7 +81,7 @@ def _fallback_value_is_valid(field: str, text: str) -> bool:
         return len(value.split()) >= 2 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|something|anything)", value))
     if field == "application":
         # Reject likely ASR corruption, but accept concise, meaningful use cases.
-        if re.search(r"(?i)\\bfraud\\b", value):
+        if re.search(r"(?i)\bfraud\b", value):
             return False
         if re.fullmatch(r"(?i)(?:charity|business|shop|retail|personal|home|office|resale)", value):
             return True
@@ -223,7 +223,7 @@ async def handle_turn(
 ) -> dict:
     """One full agent turn for a customer utterance."""
     llm = llm or get_llm()
-        # Reload the call and customer inside the active DB session.
+    # Reload the call and customer inside the active DB session.
     result = await db.execute(
         select(models.Call)
         .options(selectinload(models.Call.customer))
@@ -252,15 +252,21 @@ async def handle_turn(
     )
     all_messages = result.scalars().all()
     recent = all_messages[-12:]
-    # Silence prompts can appear between turns. Recover the latest fallback
-    # question rather than looking only at the last AI message.
-    fallback_prompt = next((
+    # Ignore silence prompts when restoring the pending question, but do not
+    # resurrect fallback mode after a later successful LLM response.
+    previous_agent_turn = next((
         m for m in reversed(all_messages[:-1])
-        if m.speaker == "ai" and isinstance(m.metadata_json, dict)
-        and m.metadata_json.get("fallback_mode")
+        if m.speaker == "ai" and not (
+            isinstance(m.metadata_json, dict)
+            and m.metadata_json.get("event") == "silence_prompt"
+        )
     ), None)
-    previous_metadata = fallback_prompt.metadata_json if fallback_prompt else {}
-    fallback_mode = bool(fallback_prompt)
+    previous_metadata = (
+        previous_agent_turn.metadata_json
+        if previous_agent_turn and isinstance(previous_agent_turn.metadata_json, dict)
+        else {}
+    )
+    fallback_mode = bool(previous_metadata.get("fallback_mode"))
     pending_field = previous_metadata.get("pending_field") if fallback_mode else None
 
     # 3. Re-attempt the provider on every turn. A previous 429/network failure
