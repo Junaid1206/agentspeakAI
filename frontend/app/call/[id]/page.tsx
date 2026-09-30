@@ -15,7 +15,7 @@ export default function VoiceCallPage() {
   const [live, setLive] = useState("");
   const socket = useRef<WebSocket | null>(null);
   const recognition = useRef<any>(null);
-  const ended = useRef(false);
+  const ended = useRef(false);\n  const busy = useRef(false);
   const speak = (text: string) => new Promise<void>(resolve => {
     if (!("speechSynthesis" in window)) { resolve(); return; }
     window.speechSynthesis.cancel();
@@ -37,17 +37,17 @@ export default function VoiceCallPage() {
       }
       setLive(interim);
       if(finalText.trim() && socket.current?.readyState===WebSocket.OPEN) {
-        setLive(""); setMessages(old=>[...old,{speaker:"customer",text:finalText.trim()}]); setPhase("thinking");
+        setLive(""); busy.current=true; setMessages(old=>[...old,{speaker:"customer",text:finalText.trim()}]); setPhase("thinking");
         socket.current.send(JSON.stringify({type:"customer_message",message:finalText.trim()}));
       }
     };
     rec.onerror = (e:any) => { if(e.error!=="no-speech"&&e.error!=="aborted")setError("Speech recognition: "+e.error); };
-    rec.onend = () => { if(!ended.current && phase==="listening") setTimeout(()=>{if(!ended.current)listen()},250); };
+    rec.onend = () => { if(!ended.current && !busy.current) setTimeout(()=>{if(!ended.current && !busy.current)listen()},300); };
     setPhase("listening"); rec.start();
   };
   async function start() {
     if(!callId || !Number.isFinite(callId)) {setError("Invalid call ID.");return;}
-    setError(""); ended.current=false;setPhase("connecting");
+    setError(""); ended.current=false;busy.current=false;setPhase("connecting");
     try {
       await navigator.mediaDevices.getUserMedia({audio:true}).then(s=>s.getTracks().forEach(t=>t.stop()));
       const greetingResponse=await fetch(`${API}/api/calls/${callId}/agent/greeting`,{method:"POST"});
@@ -57,7 +57,7 @@ export default function VoiceCallPage() {
       const ws=new WebSocket(API.replace(/^http/,"ws")+`/ws/calls/${callId}`);socket.current=ws;
       ws.onmessage=async e=>{
         const frame=JSON.parse(String(e.data)) as Frame;
-        if(frame.type==="ai_message"&&frame.message){setMessages(old=>[...old,{speaker:"ai",text:frame.message!}]);setPhase("speaking");await speak(frame.message);if(frame.should_end_call){ended.current=true;setPhase("ended")}else listen();}
+        if(frame.type==="ai_message"&&frame.message){busy.current=false;setMessages(old=>[...old,{speaker:"ai",text:frame.message!}]);setPhase("speaking");await speak(frame.message);if(frame.should_end_call){ended.current=true;setPhase("ended")}else listen();}
         if(frame.type==="call_ended"){ended.current=true;window.speechSynthesis.cancel();setPhase("ended");}
         if(frame.type==="error")setError(frame.detail||"Call error");
       };
