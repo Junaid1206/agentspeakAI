@@ -80,7 +80,11 @@ def _fallback_value_is_valid(field: str, text: str) -> bool:
     if field == "requirement":
         return len(value.split()) >= 2 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|something|anything)", value))
     if field == "application":
-        return len(value.split()) >= 1 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|at home)", value))
+        # Speech-recognition artifacts and contradictory/unsafe phrases must be
+        # confirmed instead of being silently stored as a business use case.
+        if re.search(r"(?i)\bfraud\b", value):
+            return False
+        return len(value.split()) >= 2 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|at home|exactly|yes exactly)", value))
     return True
 
 
