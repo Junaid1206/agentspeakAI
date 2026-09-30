@@ -66,7 +66,7 @@ def _fallback_value_is_valid(field: str, text: str) -> bool:
         return not words or all(word in allowed for word in words)
     if field == "location":
         cleaned = re.sub(r"^(?:add|in|at|location is|city is)\s+", "", value, flags=re.I).strip(" .,!?:")
-        return bool(re.fullmatch(r"[^\W\d_][^\W\d_ .'-]{1,79}", cleaned, flags=re.UNICODE)) and len(cleaned.split()) <= 5
+        return bool(re.fullmatch(r"[^\W\d_][^\W\d_.'-]*(?: [^\W\d_][^\W\d_.'-]*){0,4}", cleaned, flags=re.UNICODE)) and len(cleaned.split()) <= 5
     if field == "budget":
         return bool(re.fullmatch(
             r"(?i)(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*(?:\s*(?:-|to)\s*(?:(?:₹|rs\.?|inr|usd|\$)\s*)?\d[\d,]*)?(?:\s*(?:lakh|lakhs|lac|lacs|k|thousand|million|crore))?",
