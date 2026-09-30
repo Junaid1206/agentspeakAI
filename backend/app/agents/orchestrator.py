@@ -80,10 +80,11 @@ def _fallback_value_is_valid(field: str, text: str) -> bool:
     if field == "requirement":
         return len(value.split()) >= 2 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|something|anything)", value))
     if field == "application":
-        # Speech-recognition artifacts and contradictory/unsafe phrases must be
-        # confirmed instead of being silently stored as a business use case.
-        if re.search(r"(?i)\bfraud\b", value):
+        # Reject likely ASR corruption, but accept concise, meaningful use cases.
+        if re.search(r"(?i)\\bfraud\\b", value):
             return False
+        if re.fullmatch(r"(?i)(?:charity|business|shop|retail|personal|home|office|resale)", value):
+            return True
         return len(value.split()) >= 2 and not bool(re.fullmatch(r"(?i)(?:yes|no|ok|okay|maybe|at home|exactly|yes exactly)", value))
     return True
 
@@ -251,9 +252,15 @@ async def handle_turn(
     )
     all_messages = result.scalars().all()
     recent = all_messages[-12:]
-    previous_ai = next((m for m in reversed(all_messages[:-1]) if m.speaker == "ai"), None)
-    previous_metadata = previous_ai.metadata_json if previous_ai and isinstance(previous_ai.metadata_json, dict) else {}
-    fallback_mode = bool(previous_metadata.get("fallback_mode"))
+    # Silence prompts can appear between turns. Recover the latest fallback
+    # question rather than looking only at the last AI message.
+    fallback_prompt = next((
+        m for m in reversed(all_messages[:-1])
+        if m.speaker == "ai" and isinstance(m.metadata_json, dict)
+        and m.metadata_json.get("fallback_mode")
+    ), None)
+    previous_metadata = fallback_prompt.metadata_json if fallback_prompt else {}
+    fallback_mode = bool(fallback_prompt)
     pending_field = previous_metadata.get("pending_field") if fallback_mode else None
 
     # 3. Re-attempt the provider on every turn. A previous 429/network failure
