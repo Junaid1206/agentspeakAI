@@ -277,7 +277,7 @@ async def handle_turn(
     await log_event(
         db,
         call.id,
-        "agent_processing" if outcome["ok"] else "agent_error",
+        "agent_processing" if outcome["ok"] else "agent_fallback",
         f"decision via {llm.name}" if outcome["ok"] else ("Deterministic collection mode: " + str(outcome["error"])[:250]),
     )
 
