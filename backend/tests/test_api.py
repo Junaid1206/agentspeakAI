@@ -336,3 +336,51 @@ async def test_fallback_rejects_garbled_capacity_and_suggestion_as_requirement()
     assert should_end is False
     assert pending == "requirement"
     assert "product or service" in response.lower()
+
+
+async def test_fallback_keeps_pending_field_after_silence(client, call, monkeypatch):
+    from app.api_calls import orchestrator
+
+    class BrokenLLM:
+        name = "broken-test"
+        async def complete_json(self, *args, **kwargs):
+            return {"ok": False, "data": None, "error": "LLM HTTP 429"}
+
+    monkeypatch.setattr(orchestrator, "get_llm", lambda: BrokenLLM())
+    await client.post(f"/api/calls/{call['id']}/agent/greeting")
+    first = await client.post(f"/api/calls/{call['id']}/agent/message", json={"message": "yes"})
+    assert first.status_code == 200
+    assert "product or service" in first.json()["response"].lower()
+
+    # A silence prompt should not erase the pending requirement question.
+    from app.db import get_db
+    db_gen = app.dependency_overrides[get_db]()
+    db = await anext(db_gen)
+    try:
+        from app.agents.orchestrator import handle_silence
+        from sqlalchemy import select
+        from app import models
+        row = (await db.execute(select(models.Call).where(models.Call.id == call["id"]))).scalar_one()
+        await handle_silence(db, row)
+    finally:
+        await db_gen.aclose()
+
+    second = await client.post(f"/api/calls/{call['id']}/agent/message", json={"message": "men clothing brand"})
+    assert second.status_code == 200
+    assert second.json()["collected"]["requirement"] == "men clothing brand"
+    assert "capacity" in second.json()["response"].lower()
+
+
+async def test_fallback_application_accepts_concise_use_cases_and_rejects_fraud():
+    from app.agents.orchestrator import _fallback_turn
+
+    collected, _, ended, pending = _fallback_turn("charity", {}, "application")
+    assert collected["application"] == "charity"
+    assert not ended
+    assert pending == "requirement"
+
+    collected, response, ended, pending = _fallback_turn("fraud charity shop", {}, "application")
+    assert "application" not in collected
+    assert not ended
+    assert pending == "application"
+    assert "use" in response.lower()
