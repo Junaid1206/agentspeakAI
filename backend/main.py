@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 
 from app.agents.llm import get_llm
 from app.api_calls import router as calls_router
@@ -75,3 +76,16 @@ async def health():
 async def health_llm():
     """Live LLM reachability probe."""
     return await get_llm().health_check()
+
+@app.get("/api/ready", tags=["platform"])
+async def readiness():
+    """Dependency readiness probe for deploy platforms and uptime monitors."""
+    checks = {"database": "ok"}
+    try:
+        async with engine.connect() as conn:
+            await conn.execute(text("SELECT 1"))
+    except Exception as exc:  # noqa: BLE001 — never expose credentials
+        logger.warning("Readiness database probe failed: %s", type(exc).__name__)
+        checks["database"] = "error"
+        raise HTTPException(status_code=503, detail={"status": "not_ready", "checks": checks})
+    return {"status": "ready", "checks": checks}
