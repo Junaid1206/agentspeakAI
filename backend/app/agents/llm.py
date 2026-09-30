@@ -35,16 +35,17 @@ class LLMProvider(Protocol):
 class OpenAICompatibleProvider:
     """Minimal OpenAI-compatible chat-completions client (no SDK dependency)."""
 
-    def __init__(self, api_key: str, base_url: str, model: str) -> None:
+    def __init__(self, api_key: str, base_url: str, model: str, provider_name: str = "openai-compatible", timeout_seconds: float = 8) -> None:
         self.api_key = api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
-        self.name = "openai-compatible"
+        self.name = provider_name
+        self.timeout_seconds = max(2.0, min(float(timeout_seconds), 60.0))
 
     @classmethod
     def from_settings(cls) -> "OpenAICompatibleProvider":
         s = get_settings()
-        return cls(api_key=s.llm_api_key, base_url=s.llm_base_url, model=s.llm_model)
+        return cls(api_key=s.llm_api_key, base_url=s.llm_base_url, model=s.llm_model, provider_name=s.llm_provider, timeout_seconds=s.llm_timeout_seconds)
 
     @property
     def configured(self) -> bool:
@@ -72,7 +73,7 @@ class OpenAICompatibleProvider:
             # are returned immediately so a call does not waste its latency budget.
             import asyncio
 
-            async with httpx.AsyncClient(timeout=20) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(self.timeout_seconds, connect=min(3.0, self.timeout_seconds))) as client:
                 resp = None
                 for attempt in range(2):
                     try:
@@ -99,14 +100,21 @@ class OpenAICompatibleProvider:
                 logger.warning("LLM error %s: %s", status, detail)
                 return {"ok": False, "data": None, "error": f"LLM HTTP {status}"}
 
-            content = resp.json()["choices"][0]["message"]["content"] or ""
+            body = resp.json()
+            choices = body.get("choices") if isinstance(body, dict) else None
+            if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict):
+                return {"ok": False, "data": None, "error": "LLM response missing choices"}
+            message = choices[0].get("message")
+            content = message.get("content") if isinstance(message, dict) else None
+            if not isinstance(content, str) or not content.strip():
+                return {"ok": False, "data": None, "error": "LLM response has empty content"}
             parsed = _extract_json(content)
             if parsed is None:
                 return {"ok": False, "data": None, "error": "LLM returned non-JSON content"}
             return {"ok": True, "data": parsed, "error": None}
-        except httpx.HTTPError as exc:
-            logger.warning("LLM request failed: %s", exc)
-            return {"ok": False, "data": None, "error": f"LLM request failed: {type(exc).__name__}"}
+        except (httpx.HTTPError, ValueError, KeyError, IndexError) as exc:
+            logger.warning("LLM request failed: %s", type(exc).__name__)
+            return {"ok": False, "data": None, "error": f"LLM response/request failed: {type(exc).__name__}"}
 
     async def health_check(self) -> dict:
         if not self.api_key:
