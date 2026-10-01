@@ -6,6 +6,11 @@ so this feature does not require a database migration or change existing records
 from __future__ import annotations
 
 INDUSTRY_PROFILES = {
+    "water_treatment": {
+        "label": "water treatment / RO",
+        "objective": "understand the customer's water-treatment requirements and arrange a suitable next step",
+        "guidance": "Ask relevant questions about water source, intended use, approximate daily demand or capacity, site location, and whether this is a new installation or service request. Ask one at a time and skip anything already answered. Do not invent technical specifications, prices, certifications, or treatment guarantees.",
+    },
     "medical": {
         "label": "medical / healthcare administration",
         "objective": "handle the stated administrative purpose, such as appointment booking or reminder",
@@ -33,11 +38,13 @@ INDUSTRY_PROFILES = {
     },
 }
 
-def infer_industry(purpose: str | None, product: str | None) -> str:
+def infer_industry(purpose: str | None, product: str | None, industry: str | None = None) -> str:
+    if industry in INDUSTRY_PROFILES:
+        return industry
     text = f"{purpose or ''} {product or ''}".casefold()
     if any(word in text for word in ("medical", "clinic", "doctor", "patient", "healthcare", "hospital", "appointment")):
         return "medical"
-    if any(word in text for word in ("shopping", "ecommerce", "e-commerce", "order", "delivery", "product", "retail", "store", "return", "refund")):
+    if any(word in text for word in ("shopping", "ecommerce", "e-commerce", "order", "delivery", "retail", "store", "return", "refund")):
         return "shopping"
     if any(word in text for word in ("business", "b2b", "enterprise", "lead", "quotation", "quote", "project", "client")):
         return "business"
@@ -45,6 +52,6 @@ def infer_industry(purpose: str | None, product: str | None) -> str:
         return "support"
     return "general"
 
-def get_call_profile(purpose: str | None, product: str | None) -> tuple[str, dict]:
-    key = infer_industry(purpose, product)
+def get_call_profile(purpose: str | None, product: str | None, industry: str | None = None) -> tuple[str, dict]:
+    key = infer_industry(purpose, product, industry)
     return key, INDUSTRY_PROFILES[key]
