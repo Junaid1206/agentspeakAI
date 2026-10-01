@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .. import models
 from ..config import get_settings
 from . import rules
+from .industry_profiles import get_call_profile
 from .llm import LLMProvider, get_llm
 
 logger = logging.getLogger("agentspeak.agent")
@@ -218,10 +219,12 @@ async def greeting(db: AsyncSession, call: models.Call) -> str:
 
     customer = call.customer
     first_name = (customer.name or "").split(" ")[0] or customer.name
-    product = customer.product or "water treatment"
+    product = customer.product or "your enquiry"
+    industry, profile = get_call_profile(customer.purpose, customer.product)
+    purpose = (customer.purpose or "").strip() or profile["objective"]
     text = (
-        f"Hello {first_name}, this is Sam calling from AgentSpeak AI on behalf of your "
-        f"service team, regarding your {product} enquiry. Do you have a couple of minutes to talk?"
+        f"Hello {first_name}, this is Sam, an AI assistant calling from AgentSpeak AI "
+        f"on behalf of your service team about {purpose}. Is now a convenient time to talk?"
     )
     await _add_message(db, call.id, "ai", text, {"event": "greeting"})
     await _get_state(db, call.id)
@@ -286,9 +289,12 @@ async def handle_turn(
 
     # 3. Re-attempt the provider on every turn. A previous 429/network failure
     # must not permanently disable the LLM for the rest of the call.
+    industry, profile = get_call_profile(call.customer.purpose, call.customer.product)
     messages = [{"role": "system", "content": rules.build_system_prompt(
-        collected, stage, customer_name=None, product=call.customer.product or "commercial RO systems",
-        customer_language=None
+        collected, stage, customer_name=call.customer.name,
+        product=call.customer.product or "the requested service",
+        customer_language=None, industry=industry,
+        call_purpose=call.customer.purpose, industry_guidance=profile["guidance"]
     )}]
     for m in recent:
         role = "assistant" if m.speaker == "ai" else "user"
