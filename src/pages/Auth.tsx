@@ -121,37 +121,31 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleEmailSubmit}>
-                <CardContent>
-                  
-                  <div className="relative flex items-center gap-2">
-                    <div className="relative flex-1">
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <label htmlFor="auth-email" className="text-sm font-medium">Email address</label>
+                    <div className="relative">
                       <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                       <Input
+                        id="auth-email"
                         name="email"
                         placeholder="name@example.com"
                         type="email"
+                        autoComplete="email"
                         className="pl-9"
                         disabled={isLoading}
                         required
                       />
                     </div>
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      disabled={isLoading}
-                    >
-                      {isLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <span>Send code</span>
-                      <ArrowRight className="h-4 w-4" />
-                      )}
-                    </Button>
                   </div>
-                  {error && (
-                    <p className="mt-2 text-sm text-red-500">{error}</p>
-                  )}
-                  
+                  {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
+                  <Button type="submit" className="w-full" disabled={isLoading}>
+                    {isLoading ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Sending code...</>
+                    ) : (
+                      <>Submit and send OTP<ArrowRight className="ml-2 h-4 w-4" /></>
+                    )}
+                  </Button>
                 </CardContent>
               </form>
             </>
