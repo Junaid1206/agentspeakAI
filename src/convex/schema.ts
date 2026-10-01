@@ -100,6 +100,14 @@ const schema = defineSchema(
       isAnonymous: v.optional(v.boolean()), // is the user anonymous. do not remove
 
       role: v.optional(roleValidator), // role of the user. do not remove
+      company: v.optional(v.string()),
+      jobTitle: v.optional(v.string()),
+      industry: v.optional(v.string()),
+      useCase: v.optional(v.string()),
+      aiGoals: v.optional(v.string()),
+      teamSize: v.optional(v.string()),
+      website: v.optional(v.string()),
+      profileCompleted: v.optional(v.boolean()),
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // -----------------------------------------------------------------------
