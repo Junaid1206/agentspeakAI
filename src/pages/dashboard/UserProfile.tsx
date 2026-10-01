@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/use-auth";
 import { api } from "@/convex/_generated/api";
 import { useMutation } from "convex/react";
-import { Loader2, Save, UserRound } from "lucide-react";
+import { Camera, Loader2, Save, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
@@ -29,10 +29,13 @@ const EMPTY = { name: "", company: "", jobTitle: "", industry: "", useCase: "", 
 export default function UserProfile() {
   const { user } = useAuth();
   const saveProfile = useMutation(api.userProfiles.saveProfile);
+  const generateImageUploadUrl = useMutation(api.userProfiles.generateProfileImageUploadUrl);
+  const saveProfileImage = useMutation(api.userProfiles.saveProfileImage);
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -50,6 +53,22 @@ export default function UserProfile() {
   }, [user]);
 
   const set = (key: keyof typeof EMPTY, value: string) => setForm((current) => ({ ...current, [key]: value }));
+  const uploadPhoto = async (file?: File) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) { toast.error("Choose a JPG, PNG, or WebP image."); return; }
+    if (file.size > 5 * 1024 * 1024) { toast.error("Profile photo must be 5 MB or smaller."); return; }
+    setUploadingPhoto(true);
+    try {
+      const uploadUrl = await generateImageUploadUrl();
+      const response = await fetch(uploadUrl, { method: "POST", headers: { "Content-Type": file.type }, body: file });
+      if (!response.ok) throw new Error("Image upload failed.");
+      const { storageId } = await response.json();
+      await saveProfileImage({ storageId });
+      toast.success("Profile photo updated.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not upload profile photo.");
+    } finally { setUploadingPhoto(false); }
+  };
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSaving(true);
@@ -81,9 +100,9 @@ export default function UserProfile() {
           </CardHeader>
           <CardContent>
             <form onSubmit={submit} className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2">
+              <div className="mb-5 flex items-center gap-4 rounded-lg border p-4">\n                <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-full bg-muted">{user?.image ? <img src={user.image} alt="Profile" className="size-full object-cover" /> : <UserRound className="size-7 text-muted-foreground" />}</div>\n                <div className="min-w-0 flex-1 space-y-1"><p className="text-sm font-medium">Profile photo</p><p className="text-xs text-muted-foreground">JPG, PNG, or WebP · Max 5 MB</p><label className="inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-sm hover:bg-muted">{uploadingPhoto ? <Loader2 className="size-4 animate-spin" /> : <Camera className="size-4" />}{uploadingPhoto ? "Uploading…" : "Upload photo"}<input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" disabled={uploadingPhoto} onChange={(e) => { void uploadPhoto(e.target.files?.[0]); e.currentTarget.value = ""; }} /></label></div>\n              </div>\n              <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2"><label className="text-sm font-medium">Full name *</label><Input value={form.name} onChange={(e) => set("name", e.target.value)} placeholder="Your name" maxLength={120} required /></div>
-                <div className="space-y-2"><label className="text-sm font-medium">Email</label><Input value={user?.email ?? "Guest account"} disabled /></div>
+                {user?.email && <div className="space-y-2"><label className="text-sm font-medium">Email</label><Input value={user.email} disabled /></div>}
                 <div className="space-y-2"><label className="text-sm font-medium">Company / organization *</label><Input value={form.company} onChange={(e) => set("company", e.target.value)} placeholder="Company name" maxLength={160} required /></div>
                 <div className="space-y-2"><label className="text-sm font-medium">Your role *</label><Input value={form.jobTitle} onChange={(e) => set("jobTitle", e.target.value)} placeholder="Founder, Sales Manager, Doctor…" maxLength={120} required /></div>
                 <div className="space-y-2"><label className="text-sm font-medium">Industry *</label><select value={form.industry} onChange={(e) => set("industry", e.target.value)} required className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"><option value="">Select your industry</option>{INDUSTRIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></div>
