@@ -7,6 +7,7 @@ export interface Customer {
   company_name: string | null;
   purpose: string | null;
   product: string | null;
+  industry: string | null;
   created_at: string;
 }
 
