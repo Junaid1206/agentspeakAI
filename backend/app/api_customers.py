@@ -21,6 +21,7 @@ async def create_customer(body: schemas.CustomerCreate, db: AsyncSession = Depen
         company_name=(body.company_name or "").strip() or None,
         purpose=(body.purpose or "").strip() or None,
         product=(body.product or "").strip() or None,
+        industry=body.industry,
         created_at=datetime.now(timezone.utc),
         updated_at=datetime.now(timezone.utc),
     )
