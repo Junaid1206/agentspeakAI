@@ -44,3 +44,29 @@ export const saveProfile = mutation({
     return { saved: true };
   },
 });
+
+
+export const generateProfileImageUploadUrl = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("You must be signed in to upload a profile photo.");
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+export const saveProfileImage = mutation({
+  args: { storageId: v.id("_storage") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("You must be signed in to save a profile photo.");
+    const url = await ctx.storage.getUrl(args.storageId);
+    if (!url) throw new Error("Uploaded image could not be found.");
+    const previous = await ctx.db.get(userId);
+    await ctx.db.patch(userId, { image: url, profileImageStorageId: args.storageId });
+    if (previous?.profileImageStorageId && previous.profileImageStorageId !== args.storageId) {
+      await ctx.storage.delete(previous.profileImageStorageId);
+    }
+    return { saved: true, image: url };
+  },
+});
