@@ -7,7 +7,7 @@ import { api } from "@/convex/_generated/api";
 import { useMutation } from "convex/react";
 import { Loader2, Save, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 import { toast } from "sonner";
 
 const INDUSTRIES = [
@@ -30,6 +30,7 @@ export default function UserProfile() {
   const { user } = useAuth();
   const saveProfile = useMutation(api.userProfiles.saveProfile);
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const [form, setForm] = useState(EMPTY);
   const [saving, setSaving] = useState(false);
 
@@ -55,6 +56,7 @@ export default function UserProfile() {
     try {
       await saveProfile({ ...form, website: form.website.trim() || undefined });
       toast.success("Your profile has been saved.");
+      if (searchParams.get("setup") === "1") navigate("/dashboard", { replace: true });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not save profile.");
     } finally {
