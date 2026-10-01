@@ -26,6 +26,7 @@ interface CustomerForm {
   company_name: string;
   purpose: string;
   product: string;
+  industry: string;
 }
 
 const EMPTY_FORM: CustomerForm = {
@@ -34,6 +35,7 @@ const EMPTY_FORM: CustomerForm = {
   company_name: "",
   purpose: "",
   product: "",
+  industry: "general",
 };
 
 export default function Customers() {
@@ -69,6 +71,7 @@ export default function Customers() {
       company_name: c.company_name ?? "",
       purpose: c.purpose ?? "",
       product: c.product ?? "",
+      industry: c.industry ?? "general",
     });
     setDialogOpen(true);
   };
@@ -267,6 +270,13 @@ export default function Customers() {
                 onChange={(e) => setForm({ ...form, company_name: e.target.value })}
                 placeholder="Grand Lotus Hotels"
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="industry">Industry *</Label>
+              <select id="industry" value={form.industry} onChange={(e) => setForm({ ...form, industry: e.target.value })} className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                <option value="general">General enquiry</option><option value="water_treatment">Water treatment / RO</option><option value="medical">Medical / healthcare</option><option value="shopping">Shopping / e-commerce</option><option value="business">Business / B2B</option><option value="support">Customer support</option>
+              </select>
+              <p className="text-xs text-muted-foreground">AI will adapt its call questions to this industry.</p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="product">Product</Label>
