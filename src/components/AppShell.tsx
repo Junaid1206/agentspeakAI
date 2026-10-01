@@ -7,6 +7,7 @@ import { Link, useNavigate } from "react-router";
 
 const NAV = [
   { to: "/dashboard", label: "Overview" },
+  { to: "/dashboard/profile", label: "My profile" },
   { to: "/dashboard/customers", label: "Customers" },
   { to: "/dashboard/calls", label: "Calls" },
   { to: "/dashboard/catalog", label: "Campaigns" },
