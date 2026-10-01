@@ -10,12 +10,14 @@ import CampaignDetail from "@/pages/dashboard/CampaignDetail";
 import Schedule from "@/pages/dashboard/Schedule";
 import Knowledge from "@/pages/dashboard/Knowledge";
 import KnowledgePost from "@/pages/dashboard/KnowledgePost";
+import UserProfile from "@/pages/dashboard/UserProfile";
 import { Route, Routes } from "react-router";
 
 export default function Dashboard() {
   return (
     <Routes>
       <Route index element={<Overview />} />
+      <Route path="profile" element={<UserProfile />} />
       <Route path="customers" element={<Customers />} />
       <Route path="calls" element={<Calls />} />
       <Route path="calls/:callId" element={<CallDetail />} />

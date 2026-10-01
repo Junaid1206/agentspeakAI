@@ -35,7 +35,7 @@ export function RequireAuth({
   /** Skip the explanation and go straight to `/auth`. */
   redirectImmediately?: boolean;
 }) {
-  const { isLoading, isAuthenticated } = useAuth();
+  const { isLoading, isAuthenticated, user } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -45,6 +45,10 @@ export function RequireAuth({
         <Loader2 className="size-6 animate-spin text-muted-foreground" />
       </main>
     );
+  }
+
+  if (isAuthenticated && user && user.profileCompleted !== true && location.pathname !== "/dashboard/profile") {
+    return <Navigate to="/dashboard/profile?setup=1" replace />;
   }
 
   if (!isAuthenticated) {

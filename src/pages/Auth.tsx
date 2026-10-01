@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/input-otp";
 
 import { useAuth } from "@/hooks/use-auth";
+import { useMutation } from "convex/react";
+import { api } from "@/convex/_generated/api";
 import logo from "@/assets/logo.svg";
 import { ArrowRight, Loader2, Mail, UserX } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
@@ -36,6 +38,7 @@ function resolveRedirectAfterAuth(
 
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
   const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
+  const saveProfile = useMutation(api.profile.saveProfile);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = resolveRedirectAfterAuth(
@@ -44,6 +47,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
   );
   const [step, setStep] = useState<"signIn" | { email: string }>("signIn");
   const [otp, setOtp] = useState("");
+  const [profile, setProfile] = useState({ name: "", organization: "", jobTitle: "", industry: "general", aiUseCase: "", preferredLanguage: "English" });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -79,9 +83,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     try {
       const formData = new FormData(event.currentTarget);
       await signIn("email-otp", formData);
-
-      console.log("signed in");
-
+      if (profile.name.trim() || profile.organization.trim() || profile.jobTitle.trim() || profile.industry !== "general" || profile.aiUseCase.trim() || profile.preferredLanguage !== "English") {
+        await saveProfile({ name: profile.name.trim() || undefined, organization: profile.organization.trim() || undefined, jobTitle: profile.jobTitle.trim() || undefined, industry: profile.industry, aiUseCase: profile.aiUseCase.trim() || undefined, preferredLanguage: profile.preferredLanguage || undefined });
+      }
       navigate(redirect);
     } catch (error) {
       console.error("OTP verification error:", error);
@@ -138,6 +142,19 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               <form onSubmit={handleEmailSubmit}>
                 <CardContent>
                   
+                  <div className="mb-4 grid gap-3">
+                    <p className="text-sm font-medium">Your profile <span className="text-xs font-normal text-muted-foreground">(optional for existing users)</span></p>
+                    <Input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} placeholder="Full name" disabled={isLoading} />
+                    <Input value={profile.organization} onChange={(e) => setProfile({ ...profile, organization: e.target.value })} placeholder="Company / organization" disabled={isLoading} />
+                    <Input value={profile.jobTitle} onChange={(e) => setProfile({ ...profile, jobTitle: e.target.value })} placeholder="Your role (e.g. Sales Manager)" disabled={isLoading} />
+                    <select aria-label="Your industry" value={profile.industry} onChange={(e) => setProfile({ ...profile, industry: e.target.value })} disabled={isLoading} className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                      <option value="general">Select your industry</option><option value="water_treatment">Water treatment / RO</option><option value="medical">Medical / healthcare</option><option value="shopping">Shopping / e-commerce</option><option value="business">Business / B2B</option><option value="support">Customer support</option><option value="education">Education</option><option value="real_estate">Real estate</option><option value="hospitality">Hospitality / hotels</option><option value="finance">Finance / insurance</option><option value="other">Other</option>
+                    </select>
+                    <Input value={profile.aiUseCase} onChange={(e) => setProfile({ ...profile, aiUseCase: e.target.value })} placeholder="Why are you using AI? (e.g. lead qualification)" disabled={isLoading} />
+                    <select aria-label="Preferred language" value={profile.preferredLanguage} onChange={(e) => setProfile({ ...profile, preferredLanguage: e.target.value })} disabled={isLoading} className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
+                      <option>English</option><option>Hindi</option><option>Hinglish</option><option>Spanish</option><option>Arabic</option><option>Other</option>
+                    </select>
+                  </div>
                   <div className="relative flex items-center gap-2">
                     <div className="relative flex-1">
                       <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />

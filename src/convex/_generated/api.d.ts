@@ -28,6 +28,7 @@ import type * as knowledge from "../knowledge.js";
 import type * as lib_validation from "../lib/validation.js";
 import type * as scheduling from "../scheduling.js";
 import type * as users from "../users.js";
+import type * as userProfiles from "../userProfiles.js";
 
 import type {
   ApiFromModules,
