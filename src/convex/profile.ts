@@ -14,14 +14,15 @@ export const saveProfile = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("You must be signed in to save your profile.");
-    const patch: Record<string, string | number> = {
+    await ctx.db.patch(userId, {
+      ...(args.name !== undefined ? { name: args.name.trim() } : {}),
+      ...(args.organization !== undefined ? { organization: args.organization.trim() } : {}),
+      ...(args.jobTitle !== undefined ? { jobTitle: args.jobTitle.trim() } : {}),
+      ...(args.industry !== undefined ? { industry: args.industry.trim() } : {}),
+      ...(args.aiUseCase !== undefined ? { aiUseCase: args.aiUseCase.trim() } : {}),
+      ...(args.preferredLanguage !== undefined ? { preferredLanguage: args.preferredLanguage.trim() } : {}),
       profileCompletedAt: Date.now(),
-    };
-    for (const key of ["name", "organization", "jobTitle", "industry", "aiUseCase", "preferredLanguage"] as const) {
-      const value = args[key];
-      if (typeof value === "string") patch[key] = value.trim();
-    }
-    await ctx.db.patch(userId, patch);
+    });
     return { saved: true };
   },
 });
