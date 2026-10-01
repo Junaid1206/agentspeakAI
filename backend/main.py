@@ -53,6 +53,9 @@ async def startup() -> None:
     # canonical DDL for manual/psql provisioning (they match one-to-one).
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # Additive migration for existing PostgreSQL databases.
+        if conn.dialect.name == "postgresql":
+            await conn.execute(text("ALTER TABLE customers ADD COLUMN IF NOT EXISTS industry VARCHAR(40) NOT NULL DEFAULT 'general'"))
     logger.info("Database ready. call_mode=%s llm_model=%s", settings.call_mode, settings.llm_model)
 
 
