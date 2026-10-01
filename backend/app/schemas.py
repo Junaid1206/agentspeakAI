@@ -17,6 +17,7 @@ class CustomerCreate(BaseModel):
     company_name: str | None = Field(default=None, max_length=200)
     purpose: str | None = Field(default=None, max_length=500)
     product: str | None = Field(default=None, max_length=200)
+    industry: str = Field(default="general", pattern=r"^(general|water_treatment|medical|shopping|business|support)$")
 
     @field_validator("phone_number")
     @classmethod
@@ -38,6 +39,7 @@ class CustomerUpdate(BaseModel):
     company_name: str | None = None
     purpose: str | None = None
     product: str | None = None
+    industry: str | None = Field(default=None, pattern=r"^(general|water_treatment|medical|shopping|business|support)$")
 
     @field_validator("phone_number")
     @classmethod
@@ -62,6 +64,7 @@ class CustomerOut(BaseModel):
     company_name: str | None
     purpose: str | None
     product: str | None
+    industry: str
     created_at: datetime
 
     model_config = {"from_attributes": True}
