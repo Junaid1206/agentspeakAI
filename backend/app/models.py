@@ -40,6 +40,7 @@ class Customer(Base):
     company_name: Mapped[str | None] = mapped_column(String(200))
     purpose: Mapped[str | None] = mapped_column(Text)
     product: Mapped[str | None] = mapped_column(String(200))
+    industry: Mapped[str | None] = mapped_column(String(40), default="general")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

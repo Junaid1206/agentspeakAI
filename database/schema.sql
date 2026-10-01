@@ -8,9 +8,11 @@ CREATE TABLE IF NOT EXISTS customers (
     company_name    VARCHAR(200),
     purpose         TEXT,
     product         VARCHAR(200),
+    industry        VARCHAR(40) NOT NULL DEFAULT 'general',
     created_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
     updated_at      TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
+ALTER TABLE customers ADD COLUMN IF NOT EXISTS industry VARCHAR(40) NOT NULL DEFAULT 'general';
 
 CREATE TABLE IF NOT EXISTS campaigns (
     id              SERIAL PRIMARY KEY,

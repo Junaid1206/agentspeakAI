@@ -220,7 +220,7 @@ async def greeting(db: AsyncSession, call: models.Call) -> str:
     customer = call.customer
     first_name = (customer.name or "").split(" ")[0] or customer.name
     product = customer.product or "your enquiry"
-    industry, profile = get_call_profile(customer.purpose, customer.product)
+    industry, profile = get_call_profile(customer.purpose, customer.product, customer.industry)
     purpose = (customer.purpose or "").strip() or profile["objective"]
     text = (
         f"Hello {first_name}, this is Sam, an AI assistant calling from AgentSpeak AI "
@@ -289,7 +289,7 @@ async def handle_turn(
 
     # 3. Re-attempt the provider on every turn. A previous 429/network failure
     # must not permanently disable the LLM for the rest of the call.
-    industry, profile = get_call_profile(call.customer.purpose, call.customer.product)
+    industry, profile = get_call_profile(call.customer.purpose, call.customer.product, call.customer.industry)
     messages = [{"role": "system", "content": rules.build_system_prompt(
         collected, stage, customer_name=call.customer.name,
         product=call.customer.product or "the requested service",

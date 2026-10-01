@@ -70,6 +70,7 @@ export interface CustomerInput {
   company_name?: string | null;
   purpose?: string | null;
   product?: string | null;
+  industry?: string | null;
 }
 
 export const api = {
