@@ -108,6 +108,10 @@ const schema = defineSchema(
       teamSize: v.optional(v.string()),
       website: v.optional(v.string()),
       profileCompleted: v.optional(v.boolean()),
+      organization: v.optional(v.string()),
+      aiUseCase: v.optional(v.string()),
+      preferredLanguage: v.optional(v.string()),
+      profileCompletedAt: v.optional(v.number()),
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // -----------------------------------------------------------------------
