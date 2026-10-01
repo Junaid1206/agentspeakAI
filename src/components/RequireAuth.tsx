@@ -47,11 +47,11 @@ export function RequireAuth({
     );
   }
 
-  if (isAuthenticated && user && user.profileCompleted !== true && location.pathname !== "/dashboard/profile") {
+  if (isAuthenticated && user && !user.isAnonymous && user.profileCompleted !== true && location.pathname !== "/dashboard/profile") {
     return <Navigate to="/dashboard/profile?setup=1" replace />;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || !user || user.isAnonymous) {
     const returnTo = `${location.pathname}${location.search}`;
     const signInHref = `/auth?returnTo=${encodeURIComponent(returnTo)}`;
 
