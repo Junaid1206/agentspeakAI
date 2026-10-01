@@ -39,10 +39,10 @@ export default function UserProfile() {
     setForm((current) => ({
       ...current,
       name: user.name ?? current.name,
-      company: user.company ?? current.company,
+      company: user.company ?? user.organization ?? current.company,
       jobTitle: user.jobTitle ?? current.jobTitle,
       industry: user.industry ?? current.industry,
-      useCase: user.useCase ?? current.useCase,
+      useCase: user.useCase ?? user.aiUseCase ?? current.useCase,
       aiGoals: user.aiGoals ?? current.aiGoals,
       teamSize: user.teamSize ?? current.teamSize,
       website: user.website ?? current.website,
