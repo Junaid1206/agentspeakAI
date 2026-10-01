@@ -58,6 +58,8 @@ declare const fullApi: ApiFromModules<{
   "lib/validation": typeof lib_validation;
   scheduling: typeof scheduling;
   users: typeof users;
+  userProfiles: typeof userProfiles;
+  profile: typeof profile;
 }>;
 
 /**
