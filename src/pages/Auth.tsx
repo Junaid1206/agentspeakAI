@@ -58,6 +58,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     setError(null);
     try {
       const formData = new FormData(event.currentTarget);
+      const email = String(formData.get("email") ?? "").trim().toLowerCase();
+      if (!email) throw new Error("Enter your email address.");
+      formData.set("email", email);
       if (user?.isAnonymous) await signOut();
       await signIn("email-otp", formData);
       setStep({ email: formData.get("email") as string });
@@ -112,9 +115,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       onClick={() => navigate("/")}
                     />
                   </div>
-                <CardTitle className="text-xl">Get Started</CardTitle>
+                <CardTitle className="text-xl">Sign in or create an account</CardTitle>
                 <CardDescription>
-                  Enter your email. We’ll send a verification code to continue
+                  Enter your email address. We’ll send a 6-digit verification code to this email.
                 </CardDescription>
               </CardHeader>
               <form onSubmit={handleEmailSubmit}>
@@ -135,13 +138,13 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     <Button
                       type="submit"
                       variant="outline"
-                      size="icon"
                       disabled={isLoading}
                     >
                       {isLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
                       ) : (
-                        <ArrowRight className="h-4 w-4" />
+                        <span>Send code</span>
+                      <ArrowRight className="h-4 w-4" />
                       )}
                     </Button>
                   </div>
