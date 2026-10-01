@@ -36,6 +36,9 @@ export const saveProfile = mutation({
       aiGoals: text(args.aiGoals, 800, "AI goals"),
       teamSize: text(args.teamSize, 40, "Team size"),
       website: website || undefined,
+      organization: text(args.company, 160, "Company"),
+      aiUseCase: text(args.useCase, 600, "How you plan to use AgentSpeak AI"),
+      profileCompletedAt: Date.now(),
       profileCompleted: true,
     });
     return { saved: true };
