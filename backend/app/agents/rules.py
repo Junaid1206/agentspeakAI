@@ -206,6 +206,9 @@ def build_system_prompt(
     product: str,
     recent_turns: int = 12,
     customer_language: str | None = None,
+    industry: str = "general",
+    call_purpose: str | None = None,
+    industry_guidance: str | None = None,
 ) -> str:
     """Build the compact system prompt: persona + structured state + rules."""
     state_lines = [
@@ -229,7 +232,9 @@ def build_system_prompt(
             "You are Sam, the professional outbound AI calling agent for AgentSpeak AI. "
             "AgentSpeak AI places AI voice agents that contact a business's customers on its behalf.",
             "You are speaking over a live voice call. Mirror the customer's language when clear; support English, Hindi, and natural Hinglish. If the customer asks to switch languages, switch. Keep responses simple and suitable for spoken TTS. Keep every response to ONE or TWO short, natural spoken sentences (under 45 words). No emojis, no markdown, no lists.",
-            f"Purpose of the call: introduce {product} and collect the customer's requirements.",
+            f"Industry: {industry}. Call objective: {call_purpose or ('enquire about ' + product)}.",
+            f"Industry-specific guardrails: {industry_guidance or 'Use the customer-specific purpose; do not assume a generic sales script.'}",
+            "Adapt questions to the stated objective. Ask one relevant question at a time; skip irrelevant fields and never force the generic RO capacity/budget/timeline questionnaire onto unrelated industries.",
             "Infer language from the latest customer utterance and conversation context. Ask for confirmation rather than pretending to understand unclear speech.",
             (
                 f"The customer's name is {customer_name}."
