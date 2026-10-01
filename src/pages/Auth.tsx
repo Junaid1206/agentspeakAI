@@ -138,7 +138,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                     <Button
                       type="submit"
                       variant="outline"
-                      size="icon"
                       disabled={isLoading}
                     >
                       {isLoading ? (
