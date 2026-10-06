@@ -73,6 +73,18 @@ class CustomerOut(BaseModel):
 class CallCreate(BaseModel):
     customer_id: int
     mode: str = "browser"  # browser | telephony
+    from_number: str | None = Field(default=None, min_length=5, max_length=32)
+
+    @field_validator("from_number")
+    @classmethod
+    def validate_from_number(cls, v: str | None) -> str | None:
+        if v is None:
+            return None
+        phone = _normalize_phone(v)
+        digits = phone.lstrip("+")
+        if not phone.startswith("+") or not digits.isdigit() or not (PHONE_DIGITS_MIN <= len(digits) <= PHONE_DIGITS_MAX):
+            raise ValueError("Calling number must use E.164 format, e.g. +919876543210.")
+        return phone
 
 
 class CallOut(BaseModel):
