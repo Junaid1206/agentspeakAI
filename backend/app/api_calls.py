@@ -41,7 +41,7 @@ async def create_call(body: schemas.CallCreate, db: AsyncSession = Depends(get_d
 
     mode = body.mode if body.mode in ("browser", "telephony") else "browser"
     provider = make_calling_provider(mode)
-    session = await provider.initiate_call(to=customer.phone_number)
+    session = await provider.initiate_call(to=customer.phone_number, _from=body.from_number)
 
     call = models.Call(
         customer_id=customer.id,
