@@ -1,9 +1,8 @@
-import { Button } from "@/components/ui/button";\nimport { LogoDropdown } from "@/components/LogoDropdown";
-import { useAuth } from "@/hooks/use-auth";
+import { LogoDropdown } from "@/components/LogoDropdown";
 import { cn } from "@/lib/utils";
 import { PhoneCall } from "lucide-react";
 import type { ReactNode } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link } from "react-router";
 
 const NAV = [
   { to: "/dashboard", label: "Overview" },
@@ -29,8 +28,6 @@ export function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
-  const { user, signOut } = useAuth();
-  const navigate = useNavigate();
 
   return (
     <div className="min-h-screen bg-background">
