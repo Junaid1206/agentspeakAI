@@ -83,15 +83,49 @@ class TwilioCallingProvider(CallingProvider):
         token = base64.b64encode(f"{self.account_sid}:{self.auth_token}".encode()).decode()
         return {"Authorization": f"Basic {token}"}
 
+    async def _caller_id_is_allowed(self, number: str) -> bool:
+        """Allow only a Twilio-owned or verified outgoing caller ID."""
+        params = {"PhoneNumber": number}
+        async with httpx.AsyncClient(timeout=15) as client:
+            verified = await client.get(
+                f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/OutgoingCallerIds.json",
+                headers=self._auth(),
+                params=params,
+            )
+            if verified.status_code < 400:
+                items = verified.json().get("outgoing_caller_ids", [])
+                if any(item.get("phone_number") == number for item in items):
+                    return True
+
+            owned = await client.get(
+                f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/IncomingPhoneNumbers.json",
+                headers=self._auth(),
+                params=params,
+            )
+            if owned.status_code < 400:
+                items = owned.json().get("incoming_phone_numbers", [])
+                if any(item.get("phone_number") == number for item in items):
+                    return True
+
+        return False
+
     async def initiate_call(self, to: str, _from: str | None = None) -> CallSession:
         if not self.available:
             raise RuntimeError(
                 "Twilio credentials not configured. Set TWILIO_ACCOUNT_SID / "
                 "TWILIO_AUTH_TOKEN / TWILIO_PHONE_NUMBER to enable telephony mode."
             )
+
+        caller_id = _from or self.from_number
+        if _from and not await self._caller_id_is_allowed(_from):
+            raise RuntimeError(
+                "The profile calling number is not a Twilio number or verified caller ID for this account. "
+                "Verify/provision it with Twilio before using it for outbound calls."
+            )
+
         data = {
             "To": to,
-            "From": _from or self.from_number,
+            "From": caller_id,
             "Twiml": '<?xml version="1.0" encoding="UTF-8"?><Response><Pause length="1"/></Response>',
         }
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self.account_sid}/Calls.json"
