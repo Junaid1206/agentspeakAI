@@ -86,8 +86,15 @@ export const api = {
     request<void>(`/api/customers/${id}`, { method: "DELETE" }),
 
   // calls
-  createCall: (customer_id: number, mode: "browser" | "telephony" = "browser") =>
-    request<Call>("/api/calls", { method: "POST", body: JSON.stringify({ customer_id, mode }) }),
+  createCall: (
+    customer_id: number,
+    mode: "browser" | "telephony" = "browser",
+    from_number?: string,
+  ) =>
+    request<Call>("/api/calls", {
+      method: "POST",
+      body: JSON.stringify({ customer_id, mode, from_number }),
+    }),
   listCalls: () => request<Call[]>("/api/calls"),
   getCall: (id: number) => request<Call>(`/api/calls/${id}`),
   transcript: (id: number) => request<ConversationMessage[]>(`/api/calls/${id}/transcript`),
