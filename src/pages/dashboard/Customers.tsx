@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
 import { useApiResource } from "@/hooks/use-api-resource";
-import { api, type Customer } from "@/lib/api";
+import { api, type Customer } from "@/lib/api";\nimport { useAuth } from "@/hooks/use-auth";
 import { Pencil, PhoneCall, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -39,9 +39,9 @@ const EMPTY_FORM: CustomerForm = {
 };
 
 export default function Customers() {
-  const [search, setSearch] = useState("");
+  const { user } = useAuth();\n  const [search, setSearch] = useState("");
   const customersResource = useApiResource(() => api.listCustomers(search), [search]);
-  const callsResource = useApiResource(() => api.listCalls(), []);
+  const callsResource = useApiResource(() => api.listCalls(), []);\n  const configResource = useApiResource(() => api.configStatus(), []);
 
   const customers = customersResource.data;
   const allCalls = callsResource.data;
@@ -112,7 +112,11 @@ export default function Customers() {
   const startCall = async (customerId: number) => {
     setStartingCall(customerId);
     try {
-      const call = await api.createCall(customerId);
+      const mode = configResource.data?.call_mode === "telephony" ? "telephony" : "browser";
+      if (mode === "telephony" && !user?.callingPhoneNumber) {
+        throw new Error("Add your calling phone number in My Profile before starting a real AI phone call.");
+      }
+      const call = await api.createCall(customerId, mode, user?.callingPhoneNumber);
       navigate(`/dashboard/calls/${call.id}/live`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not start the call.");
