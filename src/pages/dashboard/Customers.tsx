@@ -14,7 +14,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AppShell } from "@/components/AppShell";
 import { useApiResource } from "@/hooks/use-api-resource";
-import { api, type Customer } from "@/lib/api";\nimport { useAuth } from "@/hooks/use-auth";
+import { api, type Customer } from "@/lib/api";
+import { useAuth } from "@/hooks/use-auth";
 import { Pencil, PhoneCall, Plus, Search, Trash2, UserPlus } from "lucide-react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
@@ -39,9 +40,11 @@ const EMPTY_FORM: CustomerForm = {
 };
 
 export default function Customers() {
-  const { user } = useAuth();\n  const [search, setSearch] = useState("");
+  const { user } = useAuth();
+  const [search, setSearch] = useState("");
   const customersResource = useApiResource(() => api.listCustomers(search), [search]);
-  const callsResource = useApiResource(() => api.listCalls(), []);\n  const configResource = useApiResource(() => api.configStatus(), []);
+  const callsResource = useApiResource(() => api.listCalls(), []);
+  const configResource = useApiResource(() => api.configStatus(), []);
 
   const customers = customersResource.data;
   const allCalls = callsResource.data;
