@@ -1,7 +1,7 @@
-import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";\nimport { LogoDropdown } from "@/components/LogoDropdown";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
-import { LogOut, PhoneCall } from "lucide-react";
+import { PhoneCall } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 
@@ -57,20 +57,7 @@ export function AppShell({
             ))}
           </nav>
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden text-xs text-muted-foreground sm:block">
-              {user?.email ?? "Signed in"}
-            </span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={async () => {
-                await signOut();
-                navigate("/");
-              }}
-            >
-              <LogOut className="size-4" />
-              Sign out
-            </Button>
+            <LogoDropdown />
           </div>
         </div>
       </header>
