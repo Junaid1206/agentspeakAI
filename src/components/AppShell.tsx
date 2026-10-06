@@ -29,6 +29,7 @@ export function AppShell({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  const { user } = useAuth();
 
   const navItems = NAV.filter(
     (item) => item.to !== "/dashboard/profile" || !user?.profileCompleted,
