@@ -19,6 +19,7 @@ export const saveProfile = mutation({
     aiGoals: v.string(),
     teamSize: v.string(),
     website: v.optional(v.string()),
+    callingPhoneNumber: v.string(),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -27,7 +28,7 @@ export const saveProfile = mutation({
     if (!allowedIndustries.includes(args.industry)) throw new Error("Choose a valid industry.");
     const website = args.website?.trim();
     const callingPhoneNumber = args.callingPhoneNumber.trim().replace(/[()\s-]/g, "");
-    if (!/^\\+[1-9]\\d{7,14}$/.test(callingPhoneNumber)) throw new Error("Calling phone number must be in international E.164 format, e.g. +919876543210.");
+    if (!/^\+[1-9]\d{7,14}$/.test(callingPhoneNumber)) throw new Error("Calling phone number must be in international E.164 format, e.g. +919876543210.");
     if (website && website.length > 300) throw new Error("Website must be 300 characters or fewer.");
     await ctx.db.patch(userId, {
       name: text(args.name, 120, "Full name"),
