@@ -25,7 +25,9 @@ export const saveProfile = mutation({
     if (!userId) throw new Error("You must be signed in to save your profile.");
     const allowedIndustries = ["healthcare", "ecommerce", "retail", "real_estate", "hospitality", "education", "finance", "technology", "manufacturing", "professional_services", "other"];
     if (!allowedIndustries.includes(args.industry)) throw new Error("Choose a valid industry.");
-    const website = args.website?.trim();\n    const callingPhoneNumber = args.callingPhoneNumber.trim().replace(/[()\s-]/g, "");\n    if (!/^\\+[1-9]\\d{7,14}$/.test(callingPhoneNumber)) throw new Error("Calling phone number must be in international E.164 format, e.g. +919876543210.");
+    const website = args.website?.trim();
+    const callingPhoneNumber = args.callingPhoneNumber.trim().replace(/[()\s-]/g, "");
+    if (!/^\\+[1-9]\\d{7,14}$/.test(callingPhoneNumber)) throw new Error("Calling phone number must be in international E.164 format, e.g. +919876543210.");
     if (website && website.length > 300) throw new Error("Website must be 300 characters or fewer.");
     await ctx.db.patch(userId, {
       name: text(args.name, 120, "Full name"),
@@ -35,7 +37,8 @@ export const saveProfile = mutation({
       useCase: text(args.useCase, 600, "How you plan to use AgentSpeak AI"),
       aiGoals: text(args.aiGoals, 800, "AI goals"),
       teamSize: text(args.teamSize, 40, "Team size"),
-      website: website || undefined,\n      callingPhoneNumber,
+      website: website || undefined,
+      callingPhoneNumber,
       organization: text(args.company, 160, "Company"),
       aiUseCase: text(args.useCase, 600, "How you plan to use AgentSpeak AI"),
       profileCompletedAt: Date.now(),
