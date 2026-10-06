@@ -112,7 +112,7 @@ const schema = defineSchema(
       aiUseCase: v.optional(v.string()),
       preferredLanguage: v.optional(v.string()),
       profileCompletedAt: v.optional(v.number()),
-      profileImageStorageId: v.optional(v.id("_storage")),
+      profileImageStorageId: v.optional(v.id("_storage")),\n      callingPhoneNumber: v.optional(v.string()),
     }).index("email", ["email"]), // index for the email. do not remove or modify
 
     // -----------------------------------------------------------------------
