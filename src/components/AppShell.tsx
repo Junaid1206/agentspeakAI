@@ -1,6 +1,7 @@
 import { LogoDropdown } from "@/components/LogoDropdown";
 import { cn } from "@/lib/utils";
 import { PhoneCall } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 
@@ -29,6 +30,10 @@ export function AppShell({
   children: ReactNode;
 }) {
 
+  const navItems = NAV.filter(
+    (item) => item.to !== "/dashboard/profile" || !user?.profileCompleted,
+  );
+
   return (
     <div className="min-h-screen bg-background">
       <header className="sticky top-0 z-20 border-b border-border/80 bg-background/95 backdrop-blur">
@@ -40,7 +45,7 @@ export function AppShell({
             <span className="text-sm font-semibold tracking-tight">AgentSpeak AI</span>
           </Link>
           <nav className="hidden items-center gap-1 md:flex">
-            {NAV.map((item) => (
+            {navItems.map((item) => (
               <Link
                 key={item.to}
                 to={item.to}
