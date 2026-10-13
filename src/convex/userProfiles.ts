@@ -9,6 +9,33 @@ const text = (value: string, max: number, label: string) => {
   return cleaned;
 };
 
+const allowedIndustries = [
+  "healthcare",
+  "ecommerce",
+  "retail",
+  "real_estate",
+  "hospitality",
+  "education",
+  "finance",
+  "technology",
+  "manufacturing",
+  "professional_services",
+  "other",
+] as const;
+
+const industryAliases: Record<string, (typeof allowedIndustries)[number]> = {
+  "technology / it": "technology",
+};
+
+const normalizeIndustry = (value: string): (typeof allowedIndustries)[number] => {
+  const normalized = value.trim().toLowerCase();
+  const canonical = industryAliases[normalized] ?? normalized;
+  if (!(allowedIndustries as readonly string[]).includes(canonical)) {
+    throw new Error("Choose a valid industry.");
+  }
+  return canonical as (typeof allowedIndustries)[number];
+};
+
 export const saveProfile = mutation({
   args: {
     name: v.string(),
@@ -24,17 +51,23 @@ export const saveProfile = mutation({
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("You must be signed in to save your profile.");
-    const allowedIndustries = ["healthcare", "ecommerce", "retail", "real_estate", "hospitality", "education", "finance", "technology", "manufacturing", "professional_services", "other"];
-    if (!allowedIndustries.includes(args.industry)) throw new Error("Choose a valid industry.");
+
+    const industry = normalizeIndustry(args.industry);
     const website = args.website?.trim();
     const callingPhoneNumber = args.callingPhoneNumber.trim().replace(/[()\s-]/g, "");
-    if (!/^\+[1-9]\d{7,14}$/.test(callingPhoneNumber)) throw new Error("Calling phone number must be in international E.164 format, e.g. +919876543210.");
-    if (website && website.length > 300) throw new Error("Website must be 300 characters or fewer.");
+
+    if (!/^\+[1-9]\d{7,14}$/.test(callingPhoneNumber)) {
+      throw new Error("Calling phone number must be in international E.164 format, e.g. +919876543210.");
+    }
+    if (website && website.length > 300) {
+      throw new Error("Website must be 300 characters or fewer.");
+    }
+
     await ctx.db.patch(userId, {
       name: text(args.name, 120, "Full name"),
       company: text(args.company, 160, "Company"),
       jobTitle: text(args.jobTitle, 120, "Role"),
-      industry: args.industry,
+      industry,
       useCase: text(args.useCase, 600, "How you plan to use AgentSpeak AI"),
       aiGoals: text(args.aiGoals, 800, "AI goals"),
       teamSize: text(args.teamSize, 40, "Team size"),
@@ -45,10 +78,10 @@ export const saveProfile = mutation({
       profileCompletedAt: Date.now(),
       profileCompleted: true,
     });
+
     return { saved: true };
   },
 });
-
 
 export const generateProfileImageUploadUrl = mutation({
   args: {},
