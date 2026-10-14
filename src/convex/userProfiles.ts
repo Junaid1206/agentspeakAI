@@ -9,6 +9,14 @@ const text = (value: string, max: number, label: string) => {
   return cleaned;
 };
 
+const meaningfulBusinessText = (value: string, max: number, label: string) => {
+  const cleaned = text(value, max, label);
+  if (cleaned.length < 10) throw new Error(label + " must be at least 10 characters.");
+  if (["na", "n/a", "none", "test"].includes(cleaned.toLowerCase())) {
+    throw new Error(label + " cannot be a placeholder such as NA, N/A, none, or test.");
+  }
+  return cleaned;
+};
 const allowedIndustries = [
   "healthcare",
   "ecommerce",
@@ -68,8 +76,8 @@ export const saveProfile = mutation({
       company: text(args.company, 160, "Company"),
       jobTitle: text(args.jobTitle, 120, "Role"),
       industry,
-      useCase: text(args.useCase, 600, "How you plan to use AgentSpeak AI"),
-      aiGoals: text(args.aiGoals, 800, "AI goals"),
+      useCase: meaningfulBusinessText(args.useCase, 600, "How you plan to use AgentSpeak AI"),
+      aiGoals: meaningfulBusinessText(args.aiGoals, 800, "AI goals"),
       teamSize: text(args.teamSize, 40, "Team size"),
       website: website || undefined,
       callingPhoneNumber,
