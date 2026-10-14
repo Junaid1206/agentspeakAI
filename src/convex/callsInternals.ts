@@ -70,6 +70,20 @@ export const countSummaries = internalQuery({
   },
 });
 
+export const getUserBusinessContext = internalQuery({
+  args: { user_id: v.id("users") },
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.user_id);
+    if (!user) return null;
+    return {
+      useCase: user.useCase ?? user.aiUseCase ?? "",
+      aiGoals: user.aiGoals ?? "",
+      industry: user.industry ?? "",
+      company: user.company ?? user.organization ?? "",
+    };
+  },
+});
+
 // ---------------------------------------------------------------------------
 // Internal mutations (writable from actions)
 // ---------------------------------------------------------------------------
