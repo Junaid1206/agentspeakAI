@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { validateName, validatePhone, optionalText } from "./lib/validation";
@@ -28,6 +29,8 @@ export const create = mutation({
     product: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const name = validateName(args.name);
     if (!name.ok) throw new Error(name.error);
     const phone = validatePhone(args.phone_number);
@@ -57,6 +60,8 @@ export const update = mutation({
     product: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const customer = await ctx.db.get(args.id);
     if (!customer) throw new Error("Customer not found.");
     const patch: Record<string, string | number | undefined> = { updated_at: Date.now() };
@@ -84,6 +89,8 @@ export const update = mutation({
 export const remove = mutation({
   args: { id: v.id("customers") },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const customer = await ctx.db.get(args.id);
     if (!customer) throw new Error("Customer not found.");
 
