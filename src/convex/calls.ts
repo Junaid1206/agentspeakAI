@@ -113,6 +113,7 @@ export const create = mutation({
     const now = Date.now();
     return await ctx.db.insert("calls", {
       customer_id: args.customer_id,
+      created_by: userId,
       mode: args.mode,
       call_mode: args.mode,
       direction: "outbound",
