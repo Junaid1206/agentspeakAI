@@ -32,6 +32,7 @@ function buildMessages(
   stage: string,
   customerName: string,
   product: string,
+  businessContext: { useCase: string; aiGoals: string; industry: string; company: string } | null,
 ) {
   const RECENT = 12;
   const recent = transcript.slice(-RECENT);
@@ -53,6 +54,9 @@ function buildMessages(
     `You are Sam, the professional outbound AI calling agent for AgentSpeak AI. AgentSpeak AI places AI voice agents that contact a business's customers on its behalf.`,
     `You are speaking over a live voice call. Keep every response to ONE or TWO short, natural spoken sentences (under 45 words). No emojis, no markdown, no lists.`,
     `Purpose of the call: introduce ${product} and collect the customer's requirements.`,
+    businessContext
+      ? `Business Context: Use Case: ${businessContext.useCase || "not specified"}, AI Goal: ${businessContext.aiGoals || "not specified"}, Industry: ${businessContext.industry || "not specified"}, Company: ${businessContext.company || "not specified"}. Use this context to prioritize relevant discovery questions and tailor the conversation to the company goals; do not invent facts.`
+      : `Business Context: no profile context is linked to this call. Ask only generally relevant discovery questions and do not invent company details.`,
     customerName
       ? `The customer's name is ${customerName}.`
       : `You don't know the customer's name yet; learn it naturally.`,
@@ -181,12 +185,19 @@ export const turn = action({
       await ctx.runQuery(internal.callsInternals.getTranscript, { call_id: args.call_id });
 
     // 3. Structured LLM decision.
+    const businessContext = call.created_by
+      ? await ctx.runQuery(internal.callsInternals.getUserBusinessContext, {
+          user_id: call.created_by,
+        })
+      : null;
+
     const messages = buildMessages(
       transcriptRows.map((m) => ({ speaker: m.speaker, message: m.message })),
       collected,
       stage,
       customer.name,
       customer.product || "commercial RO systems",
+      businessContext,
     );
 
     const result = await llm.completeJson<unknown>(messages, {
