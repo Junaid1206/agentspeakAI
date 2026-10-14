@@ -134,6 +134,7 @@ const schema = defineSchema(
 
     calls: defineTable({
       customer_id: v.id("customers"),
+      created_by: v.optional(v.id("users")),
       provider_call_id: v.optional(v.string()),
       mode: callModeValidator, // "browser" demo mode | "telephony"
       direction: v.union(v.literal("outbound"), v.literal("inbound")),
