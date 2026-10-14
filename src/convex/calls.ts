@@ -1,3 +1,4 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { callModeValidator, callStatusValidator, callOutcomeValidator, leadStatusValidator } from "./schema";
@@ -105,6 +106,8 @@ export const create = mutation({
     mode: callModeValidator,
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const customer = await ctx.db.get(args.customer_id);
     if (!customer) throw new Error("Customer not found.");
     const now = Date.now();
@@ -128,6 +131,8 @@ export const create = mutation({
 export const markCalling = mutation({
   args: { id: v.id("calls"), provider_call_id: v.optional(v.string()) },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const call = await ctx.db.get(args.id);
     if (!call) throw new Error("Call not found.");
     await ctx.db.patch(args.id, {
@@ -141,6 +146,8 @@ export const markCalling = mutation({
 export const markConnected = mutation({
   args: { id: v.id("calls") },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const call = await ctx.db.get(args.id);
     if (!call) throw new Error("Call not found.");
     await ctx.db.patch(args.id, { status: "connected" });
@@ -151,6 +158,8 @@ export const markConnected = mutation({
 export const markInConversation = mutation({
   args: { id: v.id("calls") },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const call = await ctx.db.get(args.id);
     if (!call) throw new Error("Call not found.");
     await ctx.db.patch(args.id, { status: "in_conversation" });
@@ -165,6 +174,8 @@ export const logEvent = mutation({
     detail: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     await ctx.db.insert("call_events", {
       call_id: args.call_id,
       event: args.event,
@@ -191,6 +202,8 @@ export const endCall = mutation({
     reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const call = await ctx.db.get(args.id);
     if (!call) throw new Error("Call not found.");
     const now = Date.now();
@@ -210,6 +223,8 @@ export const endCall = mutation({
 export const forceEnd = mutation({
   args: { id: v.id("calls") },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated.");
     const call = await ctx.db.get(args.id);
     if (!call) throw new Error("Call not found.");
     const now = Date.now();
