@@ -69,8 +69,8 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       console.error("Email sign-in error:", error);
       setError(
         error instanceof Error
-          ? error.message
-          : "Failed to send verification code. Please try again.",
+          ? `Could not send verification code: ${error.message}`
+          : "Could not send verification code because the authentication server returned an error.",
       );
       setIsLoading(false);
     }
@@ -87,7 +87,11 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
     } catch (error) {
       console.error("OTP verification error:", error);
 
-      setError("The verification code you entered is incorrect.");
+      setError(
+        error instanceof Error
+          ? `Sign-in failed: ${error.message}`
+          : "Sign-in failed because the authentication server returned an error. Please try again or contact support.",
+      );
       setIsLoading(false);
 
       setOtp("");
